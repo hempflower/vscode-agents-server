@@ -52,6 +52,7 @@ export interface UserProvidedCodeArgs {
   "disable-workspace-trust"?: boolean
   "disable-getting-started-override"?: boolean
   "disable-proxy"?: boolean
+  "disable-agents"?: boolean
   "reconnection-grace-time"?: string
   "session-socket"?: string
   "cookie-suffix"?: string
@@ -200,6 +201,10 @@ export const options: Options<Required<UserProvidedArgs>> = {
   "disable-proxy": {
     type: "boolean",
     description: "Disable domain and path proxy routes.",
+  },
+  "disable-agents": {
+    type: "boolean",
+    description: "Disable the browser Agents window and server-side Agent Host.",
   },
   // --enable can be used to enable experimental features. These features
   // provide no guarantees.
@@ -498,12 +503,15 @@ export const parse = (
 /**
  * Redact sensitive information from arguments for logging.
  */
-export const redactArgs = (args: UserProvidedArgs): UserProvidedArgs => {
+type RedactableArgs = UserProvidedArgs & { "agent-host-byok-config"?: string }
+
+export const redactArgs = (args: RedactableArgs): RedactableArgs => {
   return {
     ...args,
     password: args.password ? "<redacted>" : undefined,
     "hashed-password": args["hashed-password"] ? "<redacted>" : undefined,
     "github-auth": args["github-auth"] ? "<redacted>" : undefined,
+    "agent-host-byok-config": args["agent-host-byok-config"] ? "<redacted>" : undefined,
   }
 }
 
@@ -527,6 +535,8 @@ export interface DefaultedArgs extends ConfigArgs {
   "user-data-dir": string
   "session-socket": string
   "app-name": string
+  /** Internal, secret-bearing payload transported over the supervisor IPC handshake. */
+  "agent-host-byok-config"?: string
   /* Positional arguments. */
   _: string[]
 }
@@ -907,6 +917,8 @@ export interface CodeArgs extends UserProvidedCodeArgs {
   "without-browser-env-var"?: boolean
   compatibility?: string
   log?: string[]
+  "agent-host-path"?: string
+  "agent-host-byok-config"?: string
 }
 
 /**

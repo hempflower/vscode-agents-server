@@ -20,6 +20,18 @@ const routes = {
     /[a-z]+-[0-9a-z]+\/static\//,
     /http:\/\/localhost:[0-9]+\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
   ],
+  "/editor/": [
+    /\.\.\/manifest.json/,
+    /\.\.\/_static\//,
+    /\.\.\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+\/[a-z]+-[0-9a-z]+\/static\//,
+  ],
+  "/vscode/editor/": [
+    /\.\.\/manifest.json/,
+    /\.\.\/\.\.\/_static\//,
+    /\.\.\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
+  ],
 }
 
 describe("VS Code Routes", ["--disable-workspace-trust"], {}, async () => {
@@ -49,6 +61,35 @@ describe("VS Code Routes", ["--disable-workspace-trust"], {}, async () => {
         }
       }
     }
+  })
+
+  test("should redirect the legacy Agents route to root", async ({ codeServerPage }) => {
+    await codeServerPage.navigate("/agents/?folder=/tmp/example")
+    const url = new URL(codeServerPage.page.url())
+    expect(getMaybeProxiedPathname(url)).toBe("/")
+    expect(url.searchParams.get("folder")).toBe("/tmp/example")
+  })
+})
+
+describe(
+  "VS Code root Agents route authentication",
+  ["--disable-workspace-trust", "--auth", "password"],
+  {},
+  async () => {
+    test("should require authentication", async ({ codeServer }) => {
+      const response = await fetch(`${await codeServer.address()}/`, { redirect: "manual" })
+      expect(response.status).toBe(302)
+      expect(response.headers.get("location")).toContain("login")
+    })
+  },
+)
+
+describe("VS Code Agents route disabled", ["--disable-workspace-trust", "--disable-agents"], {}, async () => {
+  test("should return 404 for Agents routes while keeping the editor available", async ({ codeServer }) => {
+    const address = await codeServer.address()
+    expect((await fetch(`${address}/`)).status).toBe(404)
+    expect((await fetch(`${address}/agents/`)).status).toBe(404)
+    expect((await fetch(`${address}/editor/`)).status).toBe(200)
   })
 })
 

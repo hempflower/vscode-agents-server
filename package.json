@@ -103,7 +103,7 @@
     "remote-development"
   ],
   "engines": {
-    "node": "22"
+    "node": "24"
   },
   "jest": {
     "transform": {

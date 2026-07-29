@@ -42,13 +42,13 @@ main() {
     chmod 755 "$RELEASE_PATH/bin/code-server"
 
     # Delete the extra bin scripts.
-    rm "$RELEASE_PATH/lib/vscode/bin/remote-cli/code-darwin.sh"
-    rm "$RELEASE_PATH/lib/vscode/bin/remote-cli/code-linux.sh"
-    rm "$RELEASE_PATH/lib/vscode/bin/helpers/browser-darwin.sh"
-    rm "$RELEASE_PATH/lib/vscode/bin/helpers/browser-linux.sh"
+    rm -f "$RELEASE_PATH/lib/vscode/bin/remote-cli/code-darwin.sh"
+    rm -f "$RELEASE_PATH/lib/vscode/bin/remote-cli/code-linux.sh"
+    rm -f "$RELEASE_PATH/lib/vscode/bin/helpers/browser-darwin.sh"
+    rm -f "$RELEASE_PATH/lib/vscode/bin/helpers/browser-linux.sh"
     if [ "$OS" != windows ] ; then
-      rm "$RELEASE_PATH/lib/vscode/bin/remote-cli/code.cmd"
-      rm "$RELEASE_PATH/lib/vscode/bin/helpers/browser.cmd"
+      rm -f "$RELEASE_PATH/lib/vscode/bin/remote-cli/code.cmd"
+      rm -f "$RELEASE_PATH/lib/vscode/bin/helpers/browser.cmd"
     fi
   fi
 }

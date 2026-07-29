@@ -1,15 +1,15 @@
 import { logger } from "@coder/logger"
 import * as crypto from "crypto"
 import * as express from "express"
-import { promises as fs } from "fs"
+import { promises as fs, unlinkSync } from "fs"
 import * as http from "http"
 import * as net from "net"
 import * as os from "os"
 import * as path from "path"
-import { logError } from "../../common/util"
+import { logError, normalize } from "../../common/util"
 import { CodeArgs, toCodeArgs } from "../cli"
 import { isDevMode, vsRootPath } from "../constants"
-import { authenticated, ensureAuthenticated, ensureOrigin, redirect, replaceTemplates, self } from "../http"
+import { authenticated, ensureAuthenticated, ensureOrigin, redirect, replaceTemplates } from "../http"
 import { SocketProxyProvider } from "../socket"
 import { isFile } from "../util"
 import { type WebsocketRequest, Router as WsRouter } from "../wsRouter"
@@ -52,7 +52,16 @@ export type VSCodeModule = {
 /**
  * Load then create the VS Code server.
  */
+let byokBootstrapConfig: string | undefined
+let hasCapturedByokBootstrap = false
+let ownedAgentHostSocketPath: string | undefined
+
 async function loadVSCode(req: express.Request): Promise<IVSCodeServerAPI> {
+  if (!hasCapturedByokBootstrap) {
+    byokBootstrapConfig = req.args["agent-host-byok-config"]
+    delete req.args["agent-host-byok-config"]
+    hasCapturedByokBootstrap = true
+  }
   // Since server-main.js is an ES module, we have to use `import`.  However,
   // tsc will transpile this to `require` unless we change our module type,
   // which will also require that we switch to ESM, since a hybrid approach
@@ -65,6 +74,17 @@ async function loadVSCode(req: express.Request): Promise<IVSCodeServerAPI> {
   }
   const mod = (await eval(`import("${modPath}")`)) as VSCodeModule
   const serverModule = await mod.loadCodeWithNls()
+  let agentHostPath: string | undefined
+  if (os.platform() === "linux" && !req.args["disable-agents"]) {
+    const instanceHash = crypto.createHash("sha256").update(req.args["user-data-dir"]).digest("hex").slice(0, 16)
+    const runtimeRoot = process.env.XDG_RUNTIME_DIR || os.tmpdir()
+    const agentHostDirectory = path.join(runtimeRoot, `code-server-${process.getuid?.() ?? "user"}`, instanceHash)
+    await fs.mkdir(agentHostDirectory, { recursive: true, mode: 0o700 })
+    await fs.chmod(agentHostDirectory, 0o700)
+    agentHostPath = path.join(agentHostDirectory, "agent-host.sock")
+    await prepareAgentHostSocket(agentHostPath)
+    ownedAgentHostSocketPath = agentHostPath
+  }
   return serverModule.createServer(null, {
     ...(await toCodeArgs(req.args)),
     "accept-server-license-terms": true,
@@ -72,7 +92,43 @@ async function loadVSCode(req: express.Request): Promise<IVSCodeServerAPI> {
     // set to 1.63) but we have always included them.
     compatibility: "1.64",
     "without-connection-token": true,
+    "agent-host-path": agentHostPath,
+    "agent-host-byok-config": agentHostPath ? byokBootstrapConfig : undefined,
   })
+}
+
+async function prepareAgentHostSocket(socketPath: string): Promise<void> {
+  const active = await new Promise<boolean>((resolve, reject) => {
+    const socket = net.createConnection(socketPath)
+    const timer = setTimeout(() => {
+      socket.destroy()
+      reject(new Error(`Timed out checking Agent Host socket ${socketPath}`))
+    }, 500)
+    socket.once("connect", () => {
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      clearTimeout(timer)
+      socket.destroy()
+      if (error.code === "ENOENT" || error.code === "ECONNREFUSED") {
+        resolve(false)
+      } else {
+        reject(error)
+      }
+    })
+  })
+  if (active) {
+    throw new Error(`An Agent Host is already listening for this user-data-dir at ${socketPath}`)
+  }
+  try {
+    await fs.unlink(socketPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error
+    }
+  }
 }
 
 // To prevent loading the module more than once at a time.  We also have the
@@ -115,17 +171,29 @@ export const ensureVSCodeLoaded = async (
   return next()
 }
 
-router.get("/", ensureVSCodeLoaded, async (req, res, next) => {
+router.get(["/", "/editor/", "/agents", "/agents/"], async (req, res, next) => {
+  const requestedPath = new URL(req.originalUrl, "http://localhost").pathname
+  const currentRoute = normalize(requestedPath, requestedPath.endsWith("/")) || "/"
+  const isAgentsRoute = req.path === "/" || req.path === "/agents" || req.path === "/agents/"
+  if (isAgentsRoute && req.args["disable-agents"]) {
+    return res.sendStatus(404)
+  }
   const isAuthenticated = await authenticated(req)
   const NO_FOLDER_OR_WORKSPACE_QUERY = !req.query.folder && !req.query.workspace
   // Ew means the workspace was closed so clear the last folder/workspace.
   const FOLDER_OR_WORKSPACE_WAS_CLOSED = req.query.ew
 
   if (!isAuthenticated) {
-    const to = self(req)
+    const to = currentRoute
     return redirect(req, res, "login", {
       to: to !== "/" ? to : undefined,
     })
+  }
+
+  // The authenticated VS Code web server redirects the legacy /agents route
+  // to the root Agents surface while preserving its query string.
+  if (req.path === "/agents" || req.path === "/agents/") {
+    return next()
   }
 
   if (NO_FOLDER_OR_WORKSPACE_QUERY && !FOLDER_OR_WORKSPACE_WAS_CLOSED) {
@@ -135,7 +203,7 @@ router.get("/", ensureVSCodeLoaded, async (req, res, next) => {
     const IGNORE_LAST_OPENED = req.args["ignore-last-opened"]
     const HAS_LAST_OPENED_FOLDER_OR_WORKSPACE = lastOpened.folder || lastOpened.workspace
     const HAS_FOLDER_OR_WORKSPACE_FROM_CLI = req.args._.length > 0
-    const to = self(req)
+    const to = currentRoute
 
     let folder = undefined
     let workspace = undefined
@@ -237,6 +305,13 @@ router.post("/mint-key", async (req, res) => {
   res.end(key)
 })
 
+router.all(/^\/(?:agents\/?)?$/, ensureAuthenticated, (req, res, next) => {
+  if (req.args["disable-agents"]) {
+    return res.sendStatus(404)
+  }
+  return next()
+})
+
 router.all(/.*/, ensureAuthenticated, ensureVSCodeLoaded, async (req, res) => {
   vscodeServer!.handleRequest(req, res)
 })
@@ -254,5 +329,15 @@ wsRouter.ws(/.*/, ensureOrigin, ensureAuthenticated, ensureVSCodeLoaded, async (
 
 export function dispose() {
   vscodeServer?.dispose()
+  if (ownedAgentHostSocketPath) {
+    try {
+      unlinkSync(ownedAgentHostSocketPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        logError(logger, `unlink ${ownedAgentHostSocketPath}`, error)
+      }
+    }
+    ownedAgentHostSocketPath = undefined
+  }
   socketProxyProvider.stop()
 }
