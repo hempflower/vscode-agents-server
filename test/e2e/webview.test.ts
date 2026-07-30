@@ -2,7 +2,7 @@ import { promises as fs } from "fs"
 import * as path from "path"
 import { describe, test, expect } from "./baseFixture"
 
-describe("Webviews", ["--disable-workspace-trust"], {}, () => {
+describe("Webviews", ["--disable-workspace-trust", "--disable-agents"], {}, () => {
   test("should preview a Markdown file", async ({ codeServerPage }) => {
     // Create Markdown file
     const heading = "Hello world"

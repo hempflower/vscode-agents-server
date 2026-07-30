@@ -17,7 +17,15 @@ function runTestExtensionTests() {
   })
 }
 
-const flags = ["--disable-workspace-trust", "--extensions-dir", path.join(__dirname, "./extensions")]
+const flags = [
+  "--disable-workspace-trust",
+  // This suite exercises the editor extension host, not the Agent Host.  Keep
+  // the latter from competing with extension activation on constrained CI
+  // runners.
+  "--disable-agents",
+  "--extensions-dir",
+  path.join(__dirname, "./extensions"),
+]
 
 describe("Extensions", flags, {}, () => {
   runTestExtensionTests()
