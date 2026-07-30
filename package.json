@@ -73,6 +73,7 @@
     "cookie-parser": "^1.4.6",
     "env-paths": "^2.2.1",
     "express": "^5.0.1",
+    "express-rate-limit": "^8.6.1",
     "http-proxy": "^1.18.1",
     "httpolyglot": "^0.1.2",
     "i18next": "^26.3.1",

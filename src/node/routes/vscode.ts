@@ -1,6 +1,7 @@
 import { logger } from "@coder/logger"
 import * as crypto from "crypto"
 import * as express from "express"
+import { rateLimit } from "express-rate-limit"
 import { promises as fs, unlinkSync } from "fs"
 import * as http from "http"
 import * as net from "net"
@@ -17,6 +18,17 @@ import { type WebsocketRequest, Router as WsRouter } from "../wsRouter"
 export const router = express.Router()
 
 export const wsRouter = WsRouter()
+
+// Authentication itself is handled by the login route, which has a stricter
+// limiter.  This limiter protects session-cookie checks without throttling
+// authenticated users or deployments running with --auth none.
+const unauthenticatedRequestLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: authenticated,
+})
 
 /**
  * The API of VS Code's web client server.  code-server delegates requests to VS
@@ -176,10 +188,7 @@ export const ensureVSCodeLoaded = async (
 // this router is mounted below a reverse-proxy prefix.
 router.all(["/editor", "/editor/"], (_req, res) => res.sendStatus(404))
 
-// This route only checks an existing session cookie; credentials are accepted
-// and rate-limited by the login route.
-// codeql[js/missing-rate-limiting]
-router.get(["/", "/agents", "/agents/"], async (req, res, next) => {
+router.get(["/", "/agents", "/agents/"], unauthenticatedRequestLimiter, async (req, res, next) => {
   const requestedPath = new URL(req.originalUrl, "http://localhost").pathname
   const currentRoute = normalize(requestedPath, requestedPath.endsWith("/")) || "/"
   const isAuthenticated = await authenticated(req)
@@ -309,10 +318,7 @@ router.post("/mint-key", async (req, res) => {
   res.end(key)
 })
 
-// This middleware only checks an existing session cookie; credentials are
-// accepted and rate-limited by the login route.
-// codeql[js/missing-rate-limiting]
-router.all(/^\/(?:agents\/?)?$/, ensureAuthenticated)
+router.all(/^\/(?:agents\/?)?$/, unauthenticatedRequestLimiter, ensureAuthenticated)
 
 router.all(/.*/, ensureAuthenticated, ensureVSCodeLoaded, async (req, res) => {
   vscodeServer!.handleRequest(req, res)
