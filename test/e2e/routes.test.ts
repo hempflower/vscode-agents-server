@@ -6,31 +6,31 @@ const routes = {
     /\.\/manifest.json/,
     /\.\/_static\//,
     /[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/[a-z]+-[0-9a-z]+\/static\//,
   ],
   "/vscode": [
     /\.\/vscode\/manifest.json/,
     /\.\/_static\//,
     /vscode\/[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
   ],
   "/vscode/": [
     /\.\/manifest.json/,
     /\.\/\.\.\/_static\//,
     /[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
   ],
   "/editor/": [
     /\.\.\/manifest.json/,
     /\.\.\/_static\//,
     /\.\.\/[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/[a-z]+-[0-9a-z]+\/static\//,
   ],
   "/vscode/editor/": [
     /\.\.\/manifest.json/,
     /\.\.\/\.\.\/_static\//,
     /\.\.\/[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
   ],
 }
 
@@ -96,6 +96,7 @@ describe("VS Code Agents route disabled", ["--disable-workspace-trust", "--disab
 const CODE_WORKSPACE_DIR = process.env.CODE_WORKSPACE_DIR || ""
 describe("VS Code Routes with code-workspace", ["--disable-workspace-trust", CODE_WORKSPACE_DIR], {}, async () => {
   test("should redirect to the passed in workspace using human-readable query", async ({ codeServerPage }) => {
+    await codeServerPage.navigate("/")
     const url = new URL(codeServerPage.page.url())
     const pathname = getMaybeProxiedPathname(url)
     expect(pathname).toBe("/")
@@ -106,6 +107,7 @@ describe("VS Code Routes with code-workspace", ["--disable-workspace-trust", COD
 const CODE_FOLDER_DIR = process.env.CODE_FOLDER_DIR || ""
 describe("VS Code Routes with code-workspace", ["--disable-workspace-trust", CODE_FOLDER_DIR], {}, async () => {
   test("should redirect to the passed in folder using human-readable query", async ({ codeServerPage }) => {
+    await codeServerPage.navigate("/")
     const url = new URL(codeServerPage.page.url())
     const pathname = getMaybeProxiedPathname(url)
     expect(pathname).toBe("/")

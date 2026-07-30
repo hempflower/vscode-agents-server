@@ -14,7 +14,7 @@ describe("code-server", ["--disable-workspace-trust"], {}, () => {
     await Promise.all(procs.map((cs) => cs.close()))
   })
 
-  test("should navigate to home page", async ({ codeServerPage }) => {
+  test("should navigate to the editor", async ({ codeServerPage }) => {
     // We navigate codeServer before each test
     // and we start the test with a storage state
     // which means we should be logged in
@@ -23,7 +23,7 @@ describe("code-server", ["--disable-workspace-trust"], {}, () => {
     // We use match because there may be a / at the end
     // so we don't want it to fail if we expect http://localhost:8080 to match http://localhost:8080/
     const address = await getMaybeProxiedCodeServer(codeServerPage)
-    expect(url).toMatch(address)
+    expect(url).toMatch(`${address.replace(/\/$/, "")}/editor/`)
   })
 
   test("should always see the code-server editor", async ({ codeServerPage }) => {

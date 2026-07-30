@@ -81,6 +81,7 @@ export class CodeServer {
     await fs.writeFile(
       path.join(dir, "User/settings.json"),
       JSON.stringify({
+        "files.autoSave": "off",
         "workbench.startupEditor": "none",
         // Disable the welcome popup so we can avoid having to click through it
         // on every test.
@@ -296,10 +297,10 @@ export class CodeServerPage {
   }
 
   /**
-   * Navigate to a code-server endpoint (root by default).  Then wait for the
-   * editor to become available.
+   * Navigate to a code-server endpoint (the editor by default).  Then wait for
+   * the workbench to become available.
    */
-  async navigate(endpoint = "/") {
+  async navigate(endpoint = "/editor/") {
     const address = await getMaybeProxiedCodeServer(this.codeServer)
     const noramlizedUrl = normalize(address + endpoint, true)
     const to = new URL(noramlizedUrl)
