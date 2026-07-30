@@ -110,7 +110,9 @@ EOF
 
   VSCODE_QUALITY=stable npm run gulp compile-copilot-extension-full-build
 
-  npm run gulp core-ci
+  # code-server only packages the server-web output. Building the desktop and
+  # non-web server bundles in parallel needlessly increases the CI memory peak.
+  VSCODE_CORE_CI_TARGET=server-web npm run gulp core-ci
   npm run gulp "vscode-reh-web-$VSCODE_TARGET${MINIFY:+-min}-ci"
 
   # Reset so if you develop after building you will not be stuck with the wrong

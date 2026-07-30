@@ -1,0 +1,37 @@
+Allow core-ci to build only the server-web bundle
+
+code-server packages only the server-web output, while upstream core-ci builds
+desktop, server, and server-web bundles in parallel. Selecting the required
+target avoids unnecessary work and reduces the CI memory peak.
+
+Index: vscode-agents-server/lib/vscode/build/gulpfile.vscode.ts
+===================================================================
+--- vscode-agents-server.orig/lib/vscode/build/gulpfile.vscode.ts
++++ vscode-agents-server/lib/vscode/build/gulpfile.vscode.ts
+@@ -188,6 +188,13 @@ task.task(task.define('core-ci-old', tas
+ 	)
+ )));
+ 
++const esbuildVSCodeMinTask = task.define('esbuild-vscode-min', () => runEsbuildBundle('out-vscode-min', true, true, 'desktop', `${sourceMappingURLBase}/core`));
++const esbuildVSCodeRehMinTask = task.define('esbuild-vscode-reh-min', () => runEsbuildBundle('out-vscode-reh-min', true, true, 'server', `${sourceMappingURLBase}/core`));
++const esbuildVSCodeRehWebMinTask = task.define('esbuild-vscode-reh-web-min', () => runEsbuildBundle('out-vscode-reh-web-min', true, true, 'server-web', `${sourceMappingURLBase}/core`));
++const coreCiBundleTasks = process.env['VSCODE_CORE_CI_TARGET'] === 'server-web'
++	? [esbuildVSCodeRehWebMinTask]
++	: [esbuildVSCodeMinTask, esbuildVSCodeRehMinTask, esbuildVSCodeRehWebMinTask];
++
+ task.task(task.define('core-ci', task.series(
+ 	copyCodiconsTask,
+ 	compileNonNativeExtensionsBuildTask,
+@@ -198,11 +205,7 @@ task.task(task.define('core-ci', task.se
+ 	// Transpile individual files to out-build first (for unit tests)
+ 	task.define('esbuild-out-build', () => runEsbuildTranspile('out-build', false)),
+ 	// Then bundle for shipping (bundles also write NLS files to out-build)
+-	task.parallel(
+-		task.define('esbuild-vscode-min', () => runEsbuildBundle('out-vscode-min', true, true, 'desktop', `${sourceMappingURLBase}/core`)),
+-		task.define('esbuild-vscode-reh-min', () => runEsbuildBundle('out-vscode-reh-min', true, true, 'server', `${sourceMappingURLBase}/core`)),
+-		task.define('esbuild-vscode-reh-web-min', () => runEsbuildBundle('out-vscode-reh-web-min', true, true, 'server-web', `${sourceMappingURLBase}/core`)),
+-	)
++	task.parallel(...coreCiBundleTasks)
+ )));
+ 
+ /**
