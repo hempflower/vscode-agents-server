@@ -1,82 +1,88 @@
-# code-server
+# vscode-agents-server
 
-[!["GitHub Discussions"](https://img.shields.io/badge/%20GitHub-%20Discussions-gray.svg?longCache=true&logo=github&colorB=purple)](https://github.com/coder/code-server/discussions) [!["Join us on Slack"](https://img.shields.io/badge/join-us%20on%20slack-gray.svg?longCache=true&logo=slack&colorB=brightgreen)](https://coder.com/community) [![Twitter Follow](https://img.shields.io/twitter/follow/CoderHQ?label=%40CoderHQ&style=social)](https://twitter.com/coderhq) [![Discord](https://img.shields.io/discord/747933592273027093)](https://discord.com/invite/coder) [![codecov](https://codecov.io/gh/coder/code-server/branch/main/graph/badge.svg?token=5iM9farjnC)](https://codecov.io/gh/coder/code-server) [![See latest](https://img.shields.io/static/v1?label=Docs&message=see%20latest&color=blue)](https://coder.com/docs/code-server/latest)
+`vscode-agents-server` is a self-hosted, browser-based home for VS Code Agent
+sessions. It is built from [code-server](https://github.com/coder/code-server)
+and the VS Code Sessions experience, with the editor surface removed so the
+server can focus entirely on creating, monitoring, and resuming coding agents.
 
-Run [VS Code](https://github.com/Microsoft/vscode) on any machine anywhere and
-access it in the browser.
-
-![Screenshot](./assets/screenshot-1.png)
-![Screenshot](./assets/screenshot-2.png)
+![VS Code Agents running in the browser](./assets/agents.png)
 
 ## Highlights
 
-- Code on any device with a consistent development environment
-- Use cloud servers to speed up tests, compilations, downloads, and more
-- Preserve battery life when you're on the go; all intensive tasks run on your
-  server
+- Dedicated Agents UI at the server root; editor routes are not exposed
+- Server-side Agent Host with persistent sessions and workspace access
+- BYOK-only model access through an explicit JSON provider catalogue
+- OpenAI-compatible, Anthropic, and native DeepSeek model transports
+- Workspaces are trusted automatically so unattended agents are never blocked
+  by a confirmation dialog
+- Reverse-proxy and sub-path deployments are supported
 
 ## Requirements
 
-See [requirements](https://coder.com/docs/code-server/latest/requirements) for minimum specs, as well as instructions
-on how to set up a Google VM on which you can install code-server.
+- Linux
+- Node.js 24 when building or installing through npm
+- WebSocket support between the browser and server
+- At least 1 GB RAM and 2 CPU cores; agent workloads may need more
 
-**TL;DR:** Linux machine with WebSockets enabled, 1 GB RAM, and 2 vCPUs
-
-## Getting started
-
-There are five ways to get started:
-
-1. Using the [install
-   script](https://github.com/coder/code-server/blob/main/install.sh), which
-   automates most of the process. The script uses the system package manager if
-   possible.
-2. Manually [installing
-   code-server](https://coder.com/docs/code-server/latest/install)
-3. Deploy code-server to your team with [coder/coder](https://cdr.co/coder-github)
-4. Using our one-click buttons and guides to [deploy code-server to a cloud
-   provider](https://github.com/coder/deploy-code-server) ⚡
-5. Using the [code-server feature for
-   devcontainers](https://github.com/coder/devcontainer-features/blob/main/src/code-server/README.md),
-   if you already use devcontainers in your project.
-
-If you use the install script, you can preview what occurs during the install
-process:
+## Build from source
 
 ```bash
-curl -fsSL https://code-server.dev/install.sh | sh -s -- --dry-run
+git submodule update --init
+quilt push -a
+npm ci
+npm run build
+VERSION=0.0.0 npm run build:vscode
+KEEP_MODULES=1 npm run release
 ```
 
-To install, run:
+The standalone executable is generated at
+`release/bin/vscode-agents-server`.
+
+## Configure BYOK
+
+A BYOK catalogue is required. It describes the providers and models available
+to Agents while referring to API keys by environment-variable name. For
+example:
+
+```json
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "anthropic",
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "models": [
+        {
+          "id": "claude-sonnet",
+          "name": "Claude Sonnet",
+          "maxContextWindowTokens": 200000
+        }
+      ]
+    }
+  ]
+}
+```
+
+Export the referenced key and pass the catalogue path when starting the server:
 
 ```bash
-curl -fsSL https://code-server.dev/install.sh | sh
+export ANTHROPIC_API_KEY="..."
+./release/bin/vscode-agents-server \
+  --agents-byok-config /etc/vscode-agents-server/byok.json \
+  --bind-addr 0.0.0.0:3000 \
+  /path/to/workspace
 ```
 
-When done, the install script prints out instructions for running and starting
-code-server.
+The server refuses to start without `--agents-byok-config`. Keys are captured
+at startup, removed from the generic child-process environment, and delivered
+only to the server-side Agent Host. See [Web Agents and server-side
+BYOK](./agents.md) for the full schema, DeepSeek configuration, security model,
+and reverse-proxy behavior.
 
-> **Note**
-> To manage code-server for a team on your infrastructure, see: [coder/coder](https://cdr.co/coder-github)
+## License and upstream
 
-We also have an in-depth [setup and
-configuration](https://coder.com/docs/code-server/latest/guide) guide.
-
-## Questions?
-
-See answers to [frequently asked
-questions](https://coder.com/docs/code-server/latest/FAQ).
-
-## Want to help?
-
-See [Contributing](https://coder.com/docs/code-server/latest/CONTRIBUTING) for
-details.
-
-## Hiring
-
-Interested in [working at Coder](https://coder.com/careers)? Check out [our open
-positions](https://coder.com/careers#openings)!
-
-## For Teams
-
-We develop [coder/coder](https://cdr.co/coder-github) to help teams to
-adopt remote development.
+This project retains the upstream [MIT license](../LICENSE). Its server and
+packaging foundation comes from [coder/code-server](https://github.com/coder/code-server),
+while the Agents experience is based on Visual Studio Code.

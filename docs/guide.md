@@ -79,7 +79,7 @@ we recommend using another method, such as [Let's Encrypt](#let-encrypt) instead
 2. Restart code-server:
 
    ```console
-   sudo systemctl restart code-server@$USER
+   sudo systemctl restart vscode-agents-server@$USER
    ```
 
 3. Forward local port `8080` to `127.0.0.1:8080` on the remote instance by running the following command on your local machine:
@@ -251,7 +251,7 @@ To use a self-signed certificate:
 1. Restart code-server:
 
    ```console
-   sudo systemctl restart code-server@$USER
+   sudo systemctl restart vscode-agents-server@$USER
    ```
 
 At this point, you should be able to access code-server via

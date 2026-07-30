@@ -55,6 +55,22 @@ export class CodeServer {
       }),
       "utf8",
     )
+    await fs.writeFile(
+      path.join(dir, "byok.json"),
+      JSON.stringify({
+        version: 1,
+        providers: [
+          {
+            id: "e2e",
+            type: "openai",
+            baseUrl: "https://example.test/v1",
+            apiKeyEnv: "CODE_SERVER_E2E_BYOK_KEY",
+            models: [{ id: "test", name: "E2E Test", maxContextWindowTokens: 128000 }],
+          },
+        ],
+      }),
+      "utf8",
+    )
     return dir
   }
 
@@ -78,6 +94,7 @@ export class CodeServer {
           ...process.env,
           ...this.env,
           VSCODE_IPC_HOOK_CLI: "",
+          CODE_SERVER_E2E_BYOK_KEY: "test-key",
           PASSWORD,
         },
       })
@@ -135,6 +152,8 @@ export class CodeServer {
       path.join(dir, "extensions"),
       "--config",
       path.join(dir, "config.yaml"),
+      "--agents-byok-config",
+      path.join(dir, "byok.json"),
       "--user-data-dir",
       dir,
     ]

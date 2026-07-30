@@ -24,4 +24,4 @@ if [ -d "${ENTRYPOINTD}" ]; then
   find "${ENTRYPOINTD}" -type f -executable -print -exec {} \;
 fi
 
-exec dumb-init /usr/bin/code-server "$@"
+exec dumb-init /usr/bin/vscode-agents-server "$@"

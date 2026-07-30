@@ -39,6 +39,7 @@ const defaults = {
   "user-data-dir": paths.data,
   "session-socket": path.join(paths.data, "code-server-ipc.sock"),
   "app-name": "code-server",
+  "disable-workspace-trust": true,
   _: [],
 }
 
@@ -270,6 +271,7 @@ describe("parser", () => {
 
   it("should error if the option doesn't exist", () => {
     expect(() => parse(["--foo"])).toThrowError(/Unknown option --foo/)
+    expect(() => parse(["--disable-workspace-trust"])).toThrowError(/Unknown option --disable-workspace-trust/)
   })
 
   it("should not error if the value is optional", async () => {

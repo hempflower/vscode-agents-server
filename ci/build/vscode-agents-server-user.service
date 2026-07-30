@@ -1,10 +1,10 @@
 [Unit]
-Description=code-server
+Description=vscode-agents-server
 After=network.target
 
 [Service]
 Type=exec
-ExecStart=/usr/bin/code-server
+ExecStart=/usr/bin/vscode-agents-server
 Restart=always
 
 [Install]

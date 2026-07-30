@@ -10,7 +10,8 @@ export async function runCodeServerCommand(
   argv: string[],
   env?: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string; stderr: string }> {
-  const CODE_SERVER_COMMAND = process.env.CODE_SERVER_PATH || path.resolve("../../release-standalone/bin/code-server")
+  const CODE_SERVER_COMMAND =
+    process.env.CODE_SERVER_PATH || path.resolve("../../release-standalone/bin/vscode-agents-server")
   const { stdout, stderr } = await promisify(exec)(`${CODE_SERVER_COMMAND} ${argv.join(" ")}`, {
     env: { ...process.env, ...env },
   })

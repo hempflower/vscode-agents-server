@@ -343,7 +343,7 @@ Edit the `password` field in the code-server config file at
 `~/.config/code-server/config.yaml`, then restart code-server:
 
 ```bash
-sudo systemctl restart code-server@$USER
+sudo systemctl restart vscode-agents-server@$USER
 ```
 
 ## Can I store my password hashed?

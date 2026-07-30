@@ -1,7 +1,7 @@
 import { PASSWORD } from "../utils/constants"
 import { describe, test, expect } from "./baseFixture"
 
-describe("login", ["--disable-workspace-trust", "--auth", "password"], {}, () => {
+describe("login", ["--auth", "password"], {}, () => {
   test("should see the login page", async ({ codeServerPage }) => {
     // It should send us to the login page
     expect(await codeServerPage.page.title()).toBe("code-server login")
@@ -38,7 +38,7 @@ describe("login", ["--disable-workspace-trust", "--auth", "password"], {}, () =>
   })
 })
 
-describe("login rate limiter", ["--disable-workspace-trust", "--auth", "password"], {}, () => {
+describe("login rate limiter", ["--auth", "password"], {}, () => {
   test("should block too many unsuccessful logins", async ({ codeServerPage }) => {
     test.slow()
     // Click the submit button and login

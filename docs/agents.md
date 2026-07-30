@@ -1,15 +1,15 @@
 # Web Agents and server-side BYOK
 
-On Linux, code-server starts and supervises a server-side Agent Host when the
+On Linux, vscode-agents-server starts and supervises a server-side Agent Host when the
 first authenticated VS Code request initializes the server. The dedicated
-Agents UI is served at `/`. When code-server is mounted below a reverse-proxy
+Agents UI is served at `/`. When vscode-agents-server is mounted below a reverse-proxy
 path, use that path itself for Agents (for example `/vscode/`). The legacy
 `/agents/` route redirects to the Agents root. The normal editor route is not
 exposed by this Agents-only distribution.
 
 ## BYOK configuration
 
-Pass `--agents-byok-config <path>` to load a JSON catalogue. API keys are
+The required `--agents-byok-config <path>` option loads a JSON catalogue. API keys are
 referenced by environment variable name and are captured at process startup:
 
 ```json
@@ -65,14 +65,14 @@ referenced by environment variable name and are captured at process startup:
 }
 ```
 
-For example, save the catalogue as `/etc/code-server/byok.json`, export the
-referenced keys, and start code-server with:
+For example, save the catalogue as `/etc/vscode-agents-server/byok.json`, export
+the referenced keys, and start vscode-agents-server with:
 
 ```shell
 export CORP_OPENAI_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
 export DEEPSEEK_API_KEY="..."
-code-server --agents-byok-config /etc/code-server/byok.json
+vscode-agents-server --agents-byok-config /etc/vscode-agents-server/byok.json
 ```
 
 Model selection IDs use `<providerId>/<modelId>`. OpenAI-compatible requests use
@@ -89,12 +89,12 @@ an OpenAI-format compatibility cache. Known DeepSeek rejections are reported as
 deterministic codes such as
 `missing_reasoning_content` and `context_length_exceeded`.
 
-The catalogue and referenced keys are loaded once. Restart code-server after a
+The catalogue and referenced keys are loaded once. Restart vscode-agents-server after a
 configuration or key change. Invalid top-level configuration disables the whole
 environment catalogue. A missing key disables only its provider and is reported
 with a sanitized status (`ready`, `degraded`, or `disabled`).
 
-Keys are removed from the generic code-server environment before extension and
+Keys are removed from the generic vscode-agents-server environment before extension and
 tool processes are started. They are delivered only to the Agent Host bootstrap
 and are not included in browser configuration, persisted sessions, logs, or
 telemetry. Prompt and response bodies are also omitted from default Agent Host

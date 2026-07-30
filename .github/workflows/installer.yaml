@@ -35,8 +35,8 @@ jobs:
       - name: Install code-server
         run: ./install.sh
 
-      - name: Test code-server was installed globally
-        run: code-server --help
+      - name: Test vscode-agents-server was installed globally
+        run: vscode-agents-server --help
 
   alpine:
     name: Test installer on Alpine
@@ -58,8 +58,8 @@ jobs:
 
       # We do not actually have Alpine standalone builds so running code-server
       # will not work.
-      - name: Test code-server was installed to prefix
-        run: test -f /tmp/does/not/yet/exist/bin/code-server
+      - name: Test vscode-agents-server was installed to prefix
+        run: test -f /tmp/does/not/yet/exist/bin/vscode-agents-server
 
   macos:
     name: Test installer on macOS
@@ -72,5 +72,5 @@ jobs:
       - name: Install code-server
         run: ./install.sh
 
-      - name: Test code-server was installed globally
-        run: code-server --help
+      - name: Test vscode-agents-server was installed globally
+        run: vscode-agents-server --help

@@ -45,7 +45,7 @@ Usage:
   --prefix <dir>
       Sets the prefix used by standalone release archives. Defaults to ~/.local
       The release is unarchived into ~/.local/lib/code-server-X.X.X
-      and the binary symlinked into ~/.local/bin/code-server
+      and the binary symlinked into ~/.local/bin/vscode-agents-server
       To install system wide pass --prefix=/usr/local
 
   --rsh <bin>
@@ -90,10 +90,10 @@ echo_npm_postinstall() {
   cath << EOF
 npm package has been installed.
 
-Extend your path to use code-server:
+Extend your path to use vscode-agents-server:
   PATH="$NPM_BIN_DIR:\$PATH"
 Then run with:
-  code-server
+  vscode-agents-server
 EOF
 }
 
@@ -102,10 +102,10 @@ echo_standalone_postinstall() {
   cath << EOF
 Standalone release has been installed into $STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION
 
-Extend your path to use code-server:
+Extend your path to use vscode-agents-server:
   PATH="$STANDALONE_INSTALL_PREFIX/bin:\$PATH"
 Then run with:
-  code-server
+  vscode-agents-server
 EOF
 }
 
@@ -124,10 +124,10 @@ echo_systemd_postinstall() {
   cath << EOF
 $1 package has been installed.
 
-To have systemd start code-server now and restart on boot:
-  sudo systemctl enable --now code-server@\$USER
+To have systemd start vscode-agents-server now and restart on boot:
+  sudo systemctl enable --now vscode-agents-server@\$USER
 Or, if you don't want/need a background service you can run:
-  code-server
+  vscode-agents-server
 EOF
 }
 
@@ -418,7 +418,7 @@ install_standalone() {
   "$sh_c" mkdir -p "$STANDALONE_INSTALL_PREFIX/lib" "$STANDALONE_INSTALL_PREFIX/bin"
   "$sh_c" tar -C "$STANDALONE_INSTALL_PREFIX/lib" -xzf "$CACHE_DIR/code-server-$VERSION-$OS-$ARCH.tar.gz"
   "$sh_c" mv -f "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION-$OS-$ARCH" "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION"
-  "$sh_c" ln -fs "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION/bin/code-server" "$STANDALONE_INSTALL_PREFIX/bin/code-server"
+  "$sh_c" ln -fs "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION/bin/vscode-agents-server" "$STANDALONE_INSTALL_PREFIX/bin/vscode-agents-server"
 
   echo_standalone_postinstall
 }
