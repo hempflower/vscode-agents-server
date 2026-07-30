@@ -15,7 +15,7 @@ usage() {
 
   cath << EOF
 Installs vscode-agents-server.
-It tries to use the system package manager if possible.
+It installs a standalone Linux release archive.
 After successful installation it explains how to start using vscode-agents-server.
 
 Pass in user@host to install vscode-agents-server on user@host over ssh.
@@ -37,36 +37,27 @@ Usage:
 
   --method [detect | standalone]
       Choose the installation method. Defaults to detect.
-      - detect detects the system package manager and tries to use it.
-        Full reference on the process is further below.
+      - detect verifies the current platform and architecture.
       - standalone installs a standalone release archive into ~/.local
         Add ~/.local/bin to your \$PATH to use it.
 
   --prefix <dir>
       Sets the prefix used by standalone release archives. Defaults to ~/.local
-      The release is unarchived into ~/.local/lib/code-server-X.X.X
+      The release is unarchived into ~/.local/lib/vscode-agents-server-X.X.X
       and the binary symlinked into ~/.local/bin/vscode-agents-server
       To install system wide pass --prefix=/usr/local
 
   --rsh <bin>
       Specifies the remote shell for remote installation. Defaults to ssh.
 
-The detection method works as follows:
-  - Debian, Ubuntu, Raspbian: install the deb package from GitHub.
-  - Fedora, CentOS, RHEL, openSUSE: install the rpm package from GitHub.
-  - Arch Linux and macOS: install the standalone release from GitHub.
-  - FreeBSD and Alpine: report that no compatible build is available.
-  - All others: install the release from GitHub.
-
-We only build releases on GitHub for amd64 and arm64 on Linux and amd64 for
-macOS. When the detection method tries to pull a release from GitHub it will
-exit with an error when there is no matching release for the system's operating
-system and architecture.
+We only build releases for amd64 and arm64 glibc-based Linux systems. Other
+operating systems, Alpine Linux, FreeBSD, and other architectures are not
+supported.
 
 The standalone method will force installion using GitHub releases. It will not
 fall back to npm so on architectures without pre-built releases this will error.
 
-The installer will cache all downloaded assets into ~/.cache/code-server
+The installer will cache downloaded assets into ~/.cache/vscode-agents-server
 
 More installation docs are at https://github.com/hempflower/vscode-agents-server
 EOF
@@ -87,23 +78,11 @@ echo_latest_version() {
 echo_standalone_postinstall() {
   echoh
   cath << EOF
-Standalone release has been installed into $STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION
+Standalone release has been installed into $STANDALONE_INSTALL_PREFIX/lib/vscode-agents-server-$VERSION
 
 Extend your path to use vscode-agents-server:
   PATH="$STANDALONE_INSTALL_PREFIX/bin:\$PATH"
 Then run with:
-  vscode-agents-server
-EOF
-}
-
-echo_systemd_postinstall() {
-  echoh
-  cath << EOF
-$1 package has been installed.
-
-To have systemd start vscode-agents-server now and restart on boot:
-  sudo systemctl enable --now vscode-agents-server@\$USER
-Or, if you don't want/need a background service you can run:
   vscode-agents-server
 EOF
 }
@@ -214,8 +193,7 @@ main() {
   CACHE_DIR=$(echo_cache_dir)
   STANDALONE_INSTALL_PREFIX=${STANDALONE_INSTALL_PREFIX:-$HOME/.local}
   VERSION=${VERSION:-$(echo_latest_version)}
-  # These can be overridden for testing but shouldn't normally be used as it can
-  # result in a broken code-server.
+  # These can be overridden for testing but should not normally be used.
   OS=${OS:-$(os)}
   ARCH=${ARCH:-$(arch)}
   DISTRO=${DISTRO:-$(distro)}
@@ -235,21 +213,12 @@ main() {
     fi
   fi
 
-  # DISTRO can be overridden for testing but shouldn't normally be used as it
-  # can result in a broken code-server.
   case $DISTRO in
-    macos | arch) standalone_or_error install_standalone ;;
-    debian) standalone_or_error install_deb ;;
-    fedora | opensuse) standalone_or_error install_rpm ;;
-    alpine | freebsd)
+    alpine | freebsd | macos)
       echoerr "There are no vscode-agents-server builds for $DISTRO."
       exit 1
       ;;
-    *)
-      echoh "Unsupported package manager."
-      echoh "Falling back to standalone installation."
-      standalone_or_error install_standalone
-      ;;
+    *) standalone_or_error install_standalone ;;
   esac
 
   echo_project_postinstall
@@ -305,34 +274,12 @@ fetch() {
   sh_c mv "$FILE.incomplete" "$FILE"
 }
 
-install_deb() {
-  echoh "Installing v$VERSION of the $ARCH deb package from GitHub."
-  echoh
-
-  fetch "https://github.com/hempflower/vscode-agents-server/releases/download/v$VERSION/code-server_${VERSION}_$ARCH.deb" \
-    "$CACHE_DIR/code-server_${VERSION}_$ARCH.deb"
-  sudo_sh_c dpkg -i "$CACHE_DIR/code-server_${VERSION}_$ARCH.deb"
-
-  echo_systemd_postinstall deb
-}
-
-install_rpm() {
-  echoh "Installing v$VERSION of the $ARCH rpm package from GitHub."
-  echoh
-
-  fetch "https://github.com/hempflower/vscode-agents-server/releases/download/v$VERSION/code-server-$VERSION-$ARCH.rpm" \
-    "$CACHE_DIR/code-server-$VERSION-$ARCH.rpm"
-  sudo_sh_c rpm -U "$CACHE_DIR/code-server-$VERSION-$ARCH.rpm"
-
-  echo_systemd_postinstall rpm
-}
-
 install_standalone() {
   echoh "Installing v$VERSION of the $ARCH release from GitHub."
   echoh
 
-  fetch "https://github.com/hempflower/vscode-agents-server/releases/download/v$VERSION/code-server-$VERSION-$OS-$ARCH.tar.gz" \
-    "$CACHE_DIR/code-server-$VERSION-$OS-$ARCH.tar.gz"
+  fetch "https://github.com/hempflower/vscode-agents-server/releases/download/v$VERSION/vscode-agents-server-$VERSION-linux-$ARCH.tar.gz" \
+    "$CACHE_DIR/vscode-agents-server-$VERSION-linux-$ARCH.tar.gz"
 
   # -w only works if the directory exists so try creating it first. If this
   # fails we can ignore the error as the -w check will then swap us to sudo.
@@ -343,23 +290,22 @@ install_standalone() {
     sh_c="sudo_sh_c"
   fi
 
-  if [ -e "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION" ]; then
+  if [ -e "$STANDALONE_INSTALL_PREFIX/lib/vscode-agents-server-$VERSION" ]; then
     echoh
-    echoh "code-server-$VERSION is already installed at $STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION"
+    echoh "vscode-agents-server-$VERSION is already installed at $STANDALONE_INSTALL_PREFIX/lib/vscode-agents-server-$VERSION"
     echoh "Remove it to reinstall."
     exit 0
   fi
 
   "$sh_c" mkdir -p "$STANDALONE_INSTALL_PREFIX/lib" "$STANDALONE_INSTALL_PREFIX/bin"
-  "$sh_c" tar -C "$STANDALONE_INSTALL_PREFIX/lib" -xzf "$CACHE_DIR/code-server-$VERSION-$OS-$ARCH.tar.gz"
-  "$sh_c" mv -f "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION-$OS-$ARCH" "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION"
-  "$sh_c" ln -fs "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION/bin/vscode-agents-server" "$STANDALONE_INSTALL_PREFIX/bin/vscode-agents-server"
+  "$sh_c" tar -C "$STANDALONE_INSTALL_PREFIX/lib" -xzf "$CACHE_DIR/vscode-agents-server-$VERSION-linux-$ARCH.tar.gz"
+  "$sh_c" mv -f "$STANDALONE_INSTALL_PREFIX/lib/vscode-agents-server-$VERSION-linux-$ARCH" "$STANDALONE_INSTALL_PREFIX/lib/vscode-agents-server-$VERSION"
+  "$sh_c" ln -fs "$STANDALONE_INSTALL_PREFIX/lib/vscode-agents-server-$VERSION/bin/vscode-agents-server" "$STANDALONE_INSTALL_PREFIX/bin/vscode-agents-server"
 
   echo_standalone_postinstall
 }
 
-# Run $1 if a release exists, otherwise fail instead of installing the
-# unrelated upstream code-server package.
+# Run $1 if a release exists, otherwise fail.
 standalone_or_error() {
   if has_standalone; then
     $1
@@ -371,8 +317,12 @@ standalone_or_error() {
 
 # Determine if we have standalone releases on GitHub for the system's arch.
 has_standalone() {
+  if [ "$OS" != linux ]; then
+    return 1
+  fi
+
   case $DISTRO in
-    alpine | freebsd) return 1 ;;
+    alpine | freebsd | macos) return 1 ;;
   esac
 
   case $ARCH in
@@ -488,11 +438,11 @@ sudo_sh_c() {
 
 echo_cache_dir() {
   if [ "${XDG_CACHE_HOME-}" ]; then
-    echo "$XDG_CACHE_HOME/code-server"
+    echo "$XDG_CACHE_HOME/vscode-agents-server"
   elif [ "${HOME-}" ]; then
-    echo "$HOME/.cache/code-server"
+    echo "$HOME/.cache/vscode-agents-server"
   else
-    echo "/tmp/code-server-cache"
+    echo "/tmp/vscode-agents-server-cache"
   fi
 }
 

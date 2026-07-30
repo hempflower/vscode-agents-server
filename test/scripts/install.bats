@@ -7,20 +7,6 @@ SCRIPT="$BATS_TEST_DIRNAME/../../$SCRIPT_NAME"
 # user already has the latest version installed.
 export VERSION="9999.99.9"
 
-function should-use-deb() {
-  DISTRO=$1 ARCH=$2 OS=linux run "$SCRIPT" --dry-run
-  [ "$status" -eq 0 ]
-  [ "${lines[1]}" = "Installing v$VERSION of the $2 deb package from GitHub." ]
-  [ "${lines[-6]}" = "deb package has been installed." ]
-}
-
-function should-use-rpm() {
-  DISTRO=$1 ARCH=$2 OS=linux run "$SCRIPT" --dry-run
-  [ "$status" -eq 0 ]
-  [ "${lines[1]}" = "Installing v$VERSION of the $2 rpm package from GitHub." ]
-  [ "${lines[-6]}" = "rpm package has been installed." ]
-}
-
 function should-reject-arch() {
   DISTRO=$1 ARCH=$2 OS=$3 run "$SCRIPT" --dry-run
   [ "$status" -eq 1 ]
@@ -54,23 +40,22 @@ function should-detect-standalone() {
   [[ "${lines[-1]}" = "More installation docs are at"* ]]
 }
 
-# These use the deb and reject unsupported architectures.
+# Supported glibc-based Linux distributions use standalone tarballs.
 @test "$SCRIPT_NAME: debian arm64" {
-  should-use-deb "debian" "arm64"
+  should-detect-standalone "debian" "arm64" "linux"
 }
 @test "$SCRIPT_NAME: debian amd64" {
-  should-use-deb "debian" "amd64"
+  should-detect-standalone "debian" "amd64" "linux"
 }
 @test "$SCRIPT_NAME: debian i386" {
   should-reject-arch "debian" "i386" "linux"
 }
 
-# These use the rpm and reject unsupported architectures.
 @test "$SCRIPT_NAME: fedora arm64" {
-  should-use-rpm "fedora" "arm64"
+  should-detect-standalone "fedora" "arm64" "linux"
 }
 @test "$SCRIPT_NAME: fedora amd64" {
-  should-use-rpm "fedora" "amd64"
+  should-detect-standalone "fedora" "amd64" "linux"
 }
 @test "$SCRIPT_NAME: fedora i386" {
   should-reject-arch "fedora" "i386" "linux"
@@ -108,15 +93,20 @@ function should-detect-standalone() {
   should-reject-arch "arch" "i386" "linux"
 }
 
-# macOS uses the standalone build.
+# macOS is not supported.
 @test "$SCRIPT_NAME: macos amd64" {
-  should-detect-standalone "macos" "amd64" "macos"
+  should-reject-distro "macos" "amd64" "macos"
 }
 @test "$SCRIPT_NAME: macos arm64" {
-  should-detect-standalone "macos" "arm64" "macos"
+  should-reject-distro "macos" "arm64" "macos"
 }
 @test "$SCRIPT_NAME: macos i386" {
-  should-reject-arch "macos" "i386" "macos"
+  should-reject-distro "macos" "i386" "macos"
+}
+@test "$SCRIPT_NAME: macos arm64 --method standalone" {
+  DISTRO=macos ARCH=arm64 OS=macos run "$SCRIPT" --method standalone --dry-run
+  [ "$status" -eq 1 ]
+  [ "${lines[1]}" = "There are no standalone releases for arm64" ]
 }
 
 # Force standalone.
