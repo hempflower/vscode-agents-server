@@ -9,12 +9,16 @@ on:
   schedule:
     - cron: "0 16,21 * * *"
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   update:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ inputs.version }}
-      GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Fetch latest tag
@@ -66,7 +70,7 @@ jobs:
           git commit -m "Update Code to $VERSION"
           git push -u origin "$(git branch --show)"
           gh pr create \
-            --repo coder/code-server \
+            --repo "$GITHUB_REPOSITORY" \
             --title "Update Code to $VERSION" \
             --body-file .cache/checklist \
             --draft
