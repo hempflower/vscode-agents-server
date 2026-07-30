@@ -1,7 +1,7 @@
 import { PASSWORD } from "../utils/constants"
 import { describe, test, expect } from "./baseFixture"
 
-describe("login", ["--disable-workspace-trust", "--auth", "password"], {}, () => {
+describe("login", ["--auth", "password"], {}, () => {
   test("should see the login page", async ({ codeServerPage }) => {
     // It should send us to the login page
     expect(await codeServerPage.page.title()).toBe("code-server login")
@@ -15,9 +15,9 @@ describe("login", ["--disable-workspace-trust", "--auth", "password"], {}, () =>
     await codeServerPage.page.waitForLoadState("networkidle")
     // We do this because occassionally code-server doesn't load on Firefox
     // but loads if you reload once or twice
-    await codeServerPage.reloadUntilEditorIsReady()
-    // Make sure the editor actually loaded
-    expect(await codeServerPage.isEditorVisible()).toBe(true)
+    await codeServerPage.reloadUntilWorkbenchIsReady()
+    // Make sure the Agents workbench actually loaded.
+    expect(await codeServerPage.isWorkbenchVisible()).toBe(true)
   })
 
   test("should see an error message for missing password", async ({ codeServerPage }) => {
@@ -36,8 +36,10 @@ describe("login", ["--disable-workspace-trust", "--auth", "password"], {}, () =>
     await codeServerPage.page.waitForLoadState("networkidle")
     await expect(codeServerPage.page.locator("text=Incorrect password")).toBeVisible()
   })
+})
 
-  test("should hit the rate limiter for too many unsuccessful logins", async ({ codeServerPage }) => {
+describe("login rate limiter", ["--auth", "password"], {}, () => {
+  test("should block too many unsuccessful logins", async ({ codeServerPage }) => {
     test.slow()
     // Click the submit button and login
     // The current RateLimiter allows 2 logins per minute plus

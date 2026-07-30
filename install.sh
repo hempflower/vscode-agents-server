@@ -1,24 +1,24 @@
 #!/bin/sh
 set -eu
 
-# code-server's automatic install script.
-# See https://coder.com/docs/code-server/latest/install
+# vscode-agents-server's automatic install script.
+# See https://github.com/hempflower/vscode-agents-server
 
 usage() {
   arg0="$0"
   if [ "$0" = sh ]; then
-    arg0="curl -fsSL https://code-server.dev/install.sh | sh -s --"
+    arg0="curl -fsSL https://raw.githubusercontent.com/hempflower/vscode-agents-server/main/install.sh | sh -s --"
   else
-    not_curl_usage="The latest script is available at https://code-server.dev/install.sh
+    not_curl_usage="The latest script is available at https://raw.githubusercontent.com/hempflower/vscode-agents-server/main/install.sh
 "
   fi
 
   cath << EOF
-Installs code-server.
+Installs vscode-agents-server.
 It tries to use the system package manager if possible.
-After successful installation it explains how to start using code-server.
+After successful installation it explains how to start using vscode-agents-server.
 
-Pass in user@host to install code-server on user@host over ssh.
+Pass in user@host to install vscode-agents-server on user@host over ssh.
 The remote host must have internet access.
 ${not_curl_usage-}
 Usage:
@@ -45,7 +45,7 @@ Usage:
   --prefix <dir>
       Sets the prefix used by standalone release archives. Defaults to ~/.local
       The release is unarchived into ~/.local/lib/code-server-X.X.X
-      and the binary symlinked into ~/.local/bin/code-server
+      and the binary symlinked into ~/.local/bin/vscode-agents-server
       To install system wide pass --prefix=/usr/local
 
   --rsh <bin>
@@ -54,47 +54,34 @@ Usage:
 The detection method works as follows:
   - Debian, Ubuntu, Raspbian: install the deb package from GitHub.
   - Fedora, CentOS, RHEL, openSUSE: install the rpm package from GitHub.
-  - Arch Linux: install from the AUR (which pulls releases from GitHub).
-  - FreeBSD, Alpine: install from npm.
-  - macOS: install using Homebrew if installed otherwise install from GitHub.
+  - Arch Linux and macOS: install the standalone release from GitHub.
+  - FreeBSD and Alpine: report that no compatible build is available.
   - All others: install the release from GitHub.
 
 We only build releases on GitHub for amd64 and arm64 on Linux and amd64 for
 macOS. When the detection method tries to pull a release from GitHub it will
-fall back to installing from npm when there is no matching release for the
-system's operating system and architecture.
+exit with an error when there is no matching release for the system's operating
+system and architecture.
 
 The standalone method will force installion using GitHub releases. It will not
 fall back to npm so on architectures without pre-built releases this will error.
 
 The installer will cache all downloaded assets into ~/.cache/code-server
 
-More installation docs are at https://coder.com/docs/code-server/latest/install
+More installation docs are at https://github.com/hempflower/vscode-agents-server
 EOF
 }
 
 echo_latest_version() {
   if [ "${EDGE-}" ]; then
-    version="$(curl -fsSL https://api.github.com/repos/coder/code-server/releases | awk 'match($0,/.*"html_url": "(.*\/releases\/tag\/.*)".*/)' | head -n 1 | awk -F '"' '{print $4}')"
+    version="$(curl -fsSL https://api.github.com/repos/hempflower/vscode-agents-server/releases | awk 'match($0,/.*"html_url": "(.*\/releases\/tag\/.*)".*/)' | head -n 1 | awk -F '"' '{print $4}')"
   else
     # https://gist.github.com/lukechilds/a83e1d7127b78fef38c2914c4ececc3c#gistcomment-2758860
-    version="$(curl -fsSLI -o /dev/null -w "%{url_effective}" https://github.com/coder/code-server/releases/latest)"
+    version="$(curl -fsSLI -o /dev/null -w "%{url_effective}" https://github.com/hempflower/vscode-agents-server/releases/latest)"
   fi
-  version="${version#https://github.com/coder/code-server/releases/tag/}"
+  version="${version#https://github.com/hempflower/vscode-agents-server/releases/tag/}"
   version="${version#v}"
   echo "$version"
-}
-
-echo_npm_postinstall() {
-  echoh
-  cath << EOF
-npm package has been installed.
-
-Extend your path to use code-server:
-  PATH="$NPM_BIN_DIR:\$PATH"
-Then run with:
-  code-server
-EOF
 }
 
 echo_standalone_postinstall() {
@@ -102,20 +89,10 @@ echo_standalone_postinstall() {
   cath << EOF
 Standalone release has been installed into $STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION
 
-Extend your path to use code-server:
+Extend your path to use vscode-agents-server:
   PATH="$STANDALONE_INSTALL_PREFIX/bin:\$PATH"
 Then run with:
-  code-server
-EOF
-}
-
-echo_brew_postinstall() {
-  echoh
-  cath << EOF
-Brew release has been installed.
-
-Run with:
-  code-server
+  vscode-agents-server
 EOF
 }
 
@@ -124,16 +101,16 @@ echo_systemd_postinstall() {
   cath << EOF
 $1 package has been installed.
 
-To have systemd start code-server now and restart on boot:
-  sudo systemctl enable --now code-server@\$USER
+To have systemd start vscode-agents-server now and restart on boot:
+  sudo systemctl enable --now vscode-agents-server@\$USER
 Or, if you don't want/need a background service you can run:
-  code-server
+  vscode-agents-server
 EOF
 }
 
-echo_coder_postinstall() {
+echo_project_postinstall() {
   echoh
-  echoh "Deploy code-server for your team with Coder: https://github.com/coder/coder"
+  echoh "Project documentation: https://github.com/hempflower/vscode-agents-server"
 }
 
 main() {
@@ -221,7 +198,7 @@ main() {
   if [ "${RSH_ARGS-}" ]; then
     RSH="${RSH-ssh}"
     echoh "Installing remotely with $RSH $RSH_ARGS"
-    curl -fsSL https://code-server.dev/install.sh | prefix "$RSH_ARGS" "$RSH" "$RSH_ARGS" sh -s -- "$ALL_FLAGS"
+    curl -fsSL https://raw.githubusercontent.com/hempflower/vscode-agents-server/main/install.sh | prefix "$RSH_ARGS" "$RSH" "$RSH_ARGS" sh -s -- "$ALL_FLAGS"
     return
   fi
 
@@ -241,6 +218,7 @@ main() {
   # result in a broken code-server.
   OS=${OS:-$(os)}
   ARCH=${ARCH:-$(arch)}
+  DISTRO=${DISTRO:-$(distro)}
 
   distro_name
 
@@ -248,7 +226,7 @@ main() {
   if [ "$METHOD" = standalone ]; then
     if has_standalone; then
       install_standalone
-      echo_coder_postinstall
+      echo_project_postinstall
       exit 0
     else
       echoerr "There are no standalone releases for $ARCH"
@@ -259,41 +237,22 @@ main() {
 
   # DISTRO can be overridden for testing but shouldn't normally be used as it
   # can result in a broken code-server.
-  DISTRO=${DISTRO:-$(distro)}
-
   case $DISTRO in
-    # macOS uses brew when available and falls back to standalone. We only have
-    # amd64 for macOS so for anything else use npm.
-    macos)
-      BREW_PATH="${BREW_PATH-brew}"
-      if command_exists "$BREW_PATH"; then
-        install_brew
-      else
-        echoh "Homebrew not installed."
-        echoh "Falling back to standalone installation."
-        npm_fallback install_standalone
-      fi
+    macos | arch) standalone_or_error install_standalone ;;
+    debian) standalone_or_error install_deb ;;
+    fedora | opensuse) standalone_or_error install_rpm ;;
+    alpine | freebsd)
+      echoerr "There are no vscode-agents-server builds for $DISTRO."
+      exit 1
       ;;
-    # The .deb and .rpm files are pulled from GitHub and we only have amd64 and
-    # arm64 there and need to fall back to npm otherwise.
-    debian) npm_fallback install_deb ;;
-    fedora | opensuse) npm_fallback install_rpm ;;
-    # Arch uses the AUR package which only supports amd64 and arm64 since it
-    # pulls releases from GitHub so we need to fall back to npm.
-    arch) npm_fallback install_aur ;;
-    # We don't have GitHub releases that work on Alpine or FreeBSD so we have no
-    # choice but to use npm here.
-    alpine | freebsd) install_npm ;;
-    # For anything else we'll try to install standalone but fall back to npm if
-    # we don't have releases for the architecture.
     *)
       echoh "Unsupported package manager."
       echoh "Falling back to standalone installation."
-      npm_fallback install_standalone
+      standalone_or_error install_standalone
       ;;
   esac
 
-  echo_coder_postinstall
+  echo_project_postinstall
 }
 
 parse_arg() {
@@ -346,20 +305,11 @@ fetch() {
   sh_c mv "$FILE.incomplete" "$FILE"
 }
 
-install_brew() {
-  echoh "Installing latest from Homebrew."
-  echoh
-
-  sh_c "$BREW_PATH" install code-server
-
-  echo_brew_postinstall
-}
-
 install_deb() {
   echoh "Installing v$VERSION of the $ARCH deb package from GitHub."
   echoh
 
-  fetch "https://github.com/coder/code-server/releases/download/v$VERSION/code-server_${VERSION}_$ARCH.deb" \
+  fetch "https://github.com/hempflower/vscode-agents-server/releases/download/v$VERSION/code-server_${VERSION}_$ARCH.deb" \
     "$CACHE_DIR/code-server_${VERSION}_$ARCH.deb"
   sudo_sh_c dpkg -i "$CACHE_DIR/code-server_${VERSION}_$ARCH.deb"
 
@@ -370,33 +320,18 @@ install_rpm() {
   echoh "Installing v$VERSION of the $ARCH rpm package from GitHub."
   echoh
 
-  fetch "https://github.com/coder/code-server/releases/download/v$VERSION/code-server-$VERSION-$ARCH.rpm" \
+  fetch "https://github.com/hempflower/vscode-agents-server/releases/download/v$VERSION/code-server-$VERSION-$ARCH.rpm" \
     "$CACHE_DIR/code-server-$VERSION-$ARCH.rpm"
   sudo_sh_c rpm -U "$CACHE_DIR/code-server-$VERSION-$ARCH.rpm"
 
   echo_systemd_postinstall rpm
 }
 
-install_aur() {
-  echoh "Installing latest from the AUR."
-  echoh
-
-  sh_c mkdir -p "$CACHE_DIR/code-server-aur"
-  sh_c "curl -#fsSL https://aur.archlinux.org/cgit/aur.git/snapshot/code-server.tar.gz | tar -xzC $CACHE_DIR/code-server-aur --strip-components 1"
-  echo "+ cd $CACHE_DIR/code-server-aur"
-  if [ ! "${DRY_RUN-}" ]; then
-    cd "$CACHE_DIR/code-server-aur"
-  fi
-  sh_c makepkg -si --noconfirm
-
-  echo_systemd_postinstall AUR
-}
-
 install_standalone() {
   echoh "Installing v$VERSION of the $ARCH release from GitHub."
   echoh
 
-  fetch "https://github.com/coder/code-server/releases/download/v$VERSION/code-server-$VERSION-$OS-$ARCH.tar.gz" \
+  fetch "https://github.com/hempflower/vscode-agents-server/releases/download/v$VERSION/code-server-$VERSION-$OS-$ARCH.tar.gz" \
     "$CACHE_DIR/code-server-$VERSION-$OS-$ARCH.tar.gz"
 
   # -w only works if the directory exists so try creating it first. If this
@@ -418,55 +353,30 @@ install_standalone() {
   "$sh_c" mkdir -p "$STANDALONE_INSTALL_PREFIX/lib" "$STANDALONE_INSTALL_PREFIX/bin"
   "$sh_c" tar -C "$STANDALONE_INSTALL_PREFIX/lib" -xzf "$CACHE_DIR/code-server-$VERSION-$OS-$ARCH.tar.gz"
   "$sh_c" mv -f "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION-$OS-$ARCH" "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION"
-  "$sh_c" ln -fs "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION/bin/code-server" "$STANDALONE_INSTALL_PREFIX/bin/code-server"
+  "$sh_c" ln -fs "$STANDALONE_INSTALL_PREFIX/lib/code-server-$VERSION/bin/vscode-agents-server" "$STANDALONE_INSTALL_PREFIX/bin/vscode-agents-server"
 
   echo_standalone_postinstall
 }
 
-install_npm() {
-  echoh "Installing v$VERSION from npm."
-  echoh
-
-  NPM_PATH="${YARN_PATH-npm}"
-
-  if command_exists "$NPM_PATH"; then
-    sh_c="sh_c"
-    if [ ! "${DRY_RUN-}" ] && [ ! -w "$(NPM_PATH config get prefix)" ]; then
-      sh_c="sudo_sh_c"
-    fi
-    echoh "Installing with npm."
-    echoh
-    "$sh_c" "$NPM_PATH" install -g "code-server@$VERSION" --unsafe-perm
-    NPM_BIN_DIR="\$($NPM_PATH bin -g)" echo_npm_postinstall
-    return
-  fi
-  echoerr "Please install npm to install code-server!"
-  echoerr "You will need at least node v20 and a few C dependencies."
-  echoerr "See the docs https://coder.com/docs/code-server/latest/install#npm"
-
-  exit 1
-}
-
-# Run $1 if we have a standalone otherwise run install_npm.
-npm_fallback() {
+# Run $1 if a release exists, otherwise fail instead of installing the
+# unrelated upstream code-server package.
+standalone_or_error() {
   if has_standalone; then
     $1
   else
-    echoh "No standalone releases for $ARCH."
-    echoh "Falling back to installation from npm."
-    install_npm
+    echoerr "There are no vscode-agents-server releases for $ARCH."
+    exit 1
   fi
 }
 
 # Determine if we have standalone releases on GitHub for the system's arch.
 has_standalone() {
+  case $DISTRO in
+    alpine | freebsd) return 1 ;;
+  esac
+
   case $ARCH in
-    arm64) return 0 ;;
-    # We only have arm64 for macOS.
-    amd64)
-      [ "$(distro)" != macos ]
-      return
-      ;;
+    arm64 | amd64) return 0 ;;
     *) return 1 ;;
   esac
 }

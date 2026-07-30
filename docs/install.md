@@ -155,7 +155,7 @@ code-server
 ```bash
 curl -fOL https://github.com/coder/code-server/releases/download/v$VERSION/code-server_${VERSION}_amd64.deb
 sudo dpkg -i code-server_${VERSION}_amd64.deb
-sudo systemctl enable --now code-server@$USER
+sudo systemctl enable --now vscode-agents-server@$USER
 # Now visit http://127.0.0.1:8080. Your password is in ~/.config/code-server/config.yaml
 ```
 
@@ -167,7 +167,7 @@ sudo systemctl enable --now code-server@$USER
 ```bash
 curl -fOL https://github.com/coder/code-server/releases/download/v$VERSION/code-server-$VERSION-amd64.rpm
 sudo rpm -i code-server-$VERSION-amd64.rpm
-sudo systemctl enable --now code-server@$USER
+sudo systemctl enable --now vscode-agents-server@$USER
 # Now visit http://127.0.0.1:8080. Your password is in ~/.config/code-server/config.yaml
 ```
 
@@ -176,7 +176,7 @@ sudo systemctl enable --now code-server@$USER
 ```bash
 # Install code-server from the AUR using yay.
 yay -S code-server
-sudo systemctl enable --now code-server@$USER
+sudo systemctl enable --now vscode-agents-server@$USER
 # Now visit http://127.0.0.1:8080. Your password is in ~/.config/code-server/config.yaml
 ```
 
@@ -185,7 +185,7 @@ sudo systemctl enable --now code-server@$USER
 git clone https://aur.archlinux.org/code-server.git
 cd code-server
 makepkg -si
-sudo systemctl enable --now code-server@$USER
+sudo systemctl enable --now vscode-agents-server@$USER
 # Now visit http://127.0.0.1:8080. Your password is in ~/.config/code-server/config.yaml
 ```
 

@@ -49,10 +49,8 @@ export interface UserProvidedCodeArgs {
   "disable-update-check"?: boolean
   "disable-file-downloads"?: boolean
   "disable-file-uploads"?: boolean
-  "disable-workspace-trust"?: boolean
   "disable-getting-started-override"?: boolean
   "disable-proxy"?: boolean
-  "disable-agents"?: boolean
   "reconnection-grace-time"?: string
   "session-socket"?: string
   "cookie-suffix"?: string
@@ -191,10 +189,6 @@ export const options: Options<Required<UserProvidedArgs>> = {
     type: "boolean",
     description: "Disable file uploads.",
   },
-  "disable-workspace-trust": {
-    type: "boolean",
-    description: "Disable Workspace Trust feature. This switch only affects the current session.",
-  },
   "disable-getting-started-override": {
     type: "boolean",
     description: "Disable the coder/coder override in the Help: Getting Started page.",
@@ -203,14 +197,10 @@ export const options: Options<Required<UserProvidedArgs>> = {
     type: "boolean",
     description: "Disable domain and path proxy routes.",
   },
-  "disable-agents": {
-    type: "boolean",
-    description: "Disable the browser Agents window and server-side Agent Host.",
-  },
   "agents-byok-config": {
     type: "string",
     path: true,
-    description: "Path to the JSON catalogue for server-side Agent Host BYOK models.",
+    description: "Required path to the JSON catalogue for server-side Agent Host BYOK models.",
   },
   // --enable can be used to enable experimental features. These features
   // provide no guarantees.
@@ -541,6 +531,8 @@ export interface DefaultedArgs extends ConfigArgs {
   "user-data-dir": string
   "session-socket": string
   "app-name": string
+  /** Agents can always operate on the selected workspace without a trust prompt. */
+  "disable-workspace-trust": true
   /** Internal, secret-bearing payload transported over the supervisor IPC handshake. */
   "agent-host-byok-config"?: string
   /* Positional arguments. */
@@ -699,6 +691,7 @@ export async function setDefaults(cliArgs: UserProvidedArgs, configArgs?: Config
 
   return {
     ...args,
+    "disable-workspace-trust": true,
     usingEnvPassword,
     usingEnvHashedPassword,
   } as DefaultedArgs // TODO: Technically no guarantee this is fulfilled.
@@ -925,6 +918,7 @@ export interface CodeArgs extends UserProvidedCodeArgs {
   log?: string[]
   "agent-host-path"?: string
   "agent-host-byok-config"?: string
+  "disable-workspace-trust": true
 }
 
 /**

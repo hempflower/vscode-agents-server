@@ -38,8 +38,9 @@ main() {
   if [ "$KEEP_MODULES" = 1 ]; then
     # Copy the code-server launcher.
     mkdir -p "$RELEASE_PATH/bin"
-    rsync ./ci/build/code-server.sh "$RELEASE_PATH/bin/code-server"
-    chmod 755 "$RELEASE_PATH/bin/code-server"
+    rm -f "$RELEASE_PATH/bin/code-server"
+    rsync ./ci/build/vscode-agents-server.sh "$RELEASE_PATH/bin/vscode-agents-server"
+    chmod 755 "$RELEASE_PATH/bin/vscode-agents-server"
 
     # Delete the extra bin scripts.
     rm -f "$RELEASE_PATH/lib/vscode/bin/remote-cli/code-darwin.sh"

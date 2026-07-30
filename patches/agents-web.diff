@@ -1,7 +1,7 @@
 Enable VS Code Web Agents with a server-managed Agent Host and environment BYOK
 
-1. Bundle and serve the Sessions web application as code-server's primary UI,
-   while keeping the regular workbench available under `/editor/`.
+1. Bundle and serve the Sessions web application as code-server's only public
+   workbench; do not expose the regular editor route.
 2. Start and supervise one Agent Host from the VS Code server process, and
    expose its protocol and filesystem channels through the remote connection.
 3. Add environment-backed OpenAI and Anthropic model adapters, including
@@ -36,7 +36,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/base/common/product.ts
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/base/common/product.ts
 +++ vscode-agents-server/lib/vscode/src/vs/base/common/product.ts
-@@ -85,6 +85,8 @@ export interface IAgentSdkProductConfig
+@@ -98,6 +98,8 @@ export interface IDictationRuntimeProduc
  
  export interface IProductConfiguration {
  	readonly codeServerVersion?: string
@@ -115,26 +115,21 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/browser/agentHo
  import { Registry } from '../../registry/common/platform.js';
  import { AGENT_HOST_ENABLED_CONTEXT_KEY, IAgentHostEnablementService } from '../common/agentHostEnablementService.js';
  
-@@ -59,9 +60,18 @@ export class AgentHostEnablementService
+@@ -60,10 +61,12 @@ export class AgentHostEnablementService
  	constructor(
  		@IConfigurationService configurationService: IConfigurationService,
  		@IContextKeyService contextKeyService: IContextKeyService,
 +		@IProductService productService: IProductService,
  	) {
  		super();
--		this.enabled = !isWeb && (configurationService.getValue<boolean>(agentHostEnabledSettingId) ?? false);
+-		this.enabled = !isWeb
+-			&& configurationService.getValue<boolean>(agentHostEnabledSettingId) === true
 +		const runtimeSupportsAgentHost = !isWeb || productService.codeServerAgentHostWebEnabled === true;
-+		// code-server owns and supervises the server-side Agent Host. Its product
-+		// capability is injected only when the CLI feature is enabled, so it is
-+		// also the authoritative default-on switch for the Web workbench. Keep
-+		// the upstream setting behavior unchanged for every other Web product.
-+		this.enabled = runtimeSupportsAgentHost && (
-+			productService.codeServerAgentHostWebEnabled === true
-+			|| (configurationService.getValue<boolean>(agentHostEnabledSettingId) ?? false)
-+		);
++		this.enabled = runtimeSupportsAgentHost
++			&& (productService.codeServerAgentHostWebEnabled === true || configurationService.getValue<boolean>(agentHostEnabledSettingId) === true)
+ 			&& configurationService.getValue<boolean>(aiFeaturesDisabledSettingId) !== true;
  		AGENT_HOST_ENABLED_CONTEXT_KEY.bindTo(contextKeyService).set(this.enabled);
  	}
- }
 Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentHostByokLm.ts
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/common/agentHostByokLm.ts
@@ -246,7 +241,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentSer
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/common/agentService.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentService.ts
-@@ -18,6 +18,7 @@ import type { IRemoteWatchHandle } from
+@@ -19,6 +19,7 @@ import type { AgentHostClientType } from
  import type { CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult } from './state/protocol/commands.js';
  import type { InitializeResult } from './state/protocol/common/commands.js';
  import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } from './state/protocol/channels-changeset/commands.js';
@@ -254,16 +249,16 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentSer
  import { ProtectedResourceMetadata, type Changeset, type ConfigSchema, type MessageAttachment, type ModelSelection, type AgentSelection, type SessionActiveClient, type ToolCallPendingConfirmationState, type ToolDefinition, ChangesSummary } from './state/protocol/state.js';
  import type { ActionEnvelope, AuthRequiredParams, INotification, IRootConfigChangedAction, SessionAction, ChatAction, TerminalAction, ClientAnnotationsAction, ClientChangesetAction } from './state/sessionActions.js';
  import type { ResourceCopyParams, ResourceCopyResult, ResourceDeleteParams, ResourceDeleteResult, ResourceListResult, ResourceMkdirParams, ResourceMkdirResult, ResourceMoveParams, ResourceMoveResult, ResourceReadResult, ResourceResolveParams, ResourceResolveResult, ResourceWatchState, ResourceWriteParams, ResourceWriteResult, CreateResourceWatchParams, CreateResourceWatchResult, IStateSnapshot } from './state/sessionProtocol.js';
-@@ -34,6 +35,8 @@ export const enum AgentHostIpcChannels {
+@@ -35,6 +36,8 @@ export const enum AgentHostIpcChannels {
  	Logger = 'agentHostLogger',
  	/** Channel for WebSocket client connection count (server process management only) */
  	ConnectionTracker = 'agentHostConnectionTracker',
 +	/** One-shot, process-local transfer of the server BYOK bootstrap. */
 +	ByokBootstrap = 'agentHostByokBootstrap',
- 	/**
- 	 * Channel registered by the remote server that proxies AHP JSON-RPC
- 	 * frames between a renderer and the agent host running on the server.
-@@ -772,6 +775,8 @@ export interface IAgentDescriptor {
+ 	/** Channel carrying raw Agent Host Protocol frames over a MessagePort. */
+ 	Protocol = 'agentHostProtocol',
+ 	/** Narrow local management channel that remains outside of the AHP data plane. */
+@@ -819,6 +822,8 @@ export interface IAgentDescriptor {
  	readonly provider: AgentProvider;
  	readonly displayName: string;
  	readonly description: string;
@@ -272,7 +267,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentSer
  	/** Static capability flags the agent advertises (see {@link IAgentCapabilities}). */
  	readonly capabilities?: IAgentCapabilities;
  }
-@@ -2131,6 +2136,13 @@ export interface IAgentHostService exten
+@@ -2239,6 +2244,13 @@ export interface IAgentHostService exten
  
  	readonly _serviceBrand: undefined;
  
@@ -334,21 +329,21 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/agentHostM
  import { isUtilityProcess } from '../../../base/parts/sandbox/node/electronTypes.js';
 -import { Emitter, type Event } from '../../../base/common/event.js';
 +import { Emitter, Event } from '../../../base/common/event.js';
- import { DisposableStore, IDisposable } from '../../../base/common/lifecycle.js';
+ import { DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../base/common/lifecycle.js';
  import { joinPath } from '../../../base/common/resources.js';
  import { isWindows } from '../../../base/common/platform.js';
-@@ -73,6 +73,7 @@ import { AgentHostClientFileSystemProvid
+@@ -78,6 +78,7 @@ import { IEditSurvivalReporterFactory, E
+ import { AgentHostClientFileSystemProvider } from '../common/agentHostClientFileSystemProvider.js';
  import { AGENT_CLIENT_SCHEME } from '../common/agentClientUri.js';
- import { AGENT_HOST_CLIENT_RESOURCE_CHANNEL, createAgentHostClientResourceConnection } from '../common/agentHostClientResourceChannel.js';
  import { AGENT_HOST_CLIENT_BYOK_LM_CHANNEL, createAgentHostClientByokLmConnection } from '../common/agentHostClientByokLmChannel.js';
 +import { AgentHostEnvironmentByokBootstrapEnvVar, getEnvironmentByokSecretNames } from '../common/agentHostByokLm.js';
  import { AGENT_HOST_CLIENT_PROXY_CHANNEL, createAgentHostClientProxyConnection } from '../common/agentHostClientProxyChannel.js';
  import { IAgentPluginManager } from '../common/agentPluginManager.js';
  import { AgentPluginManager } from './agentPluginManager.js';
-@@ -85,18 +86,17 @@ import { registerPendingEditContentProvi
- import { join } from '../../../base/common/path.js';
+@@ -91,18 +92,17 @@ import { join } from '../../../base/comm
  import { createAgentHostTelemetryService } from './agentHostTelemetryService.js';
  import { ITelemetryService } from '../../telemetry/common/telemetry.js';
+ import ErrorTelemetry from '../../telemetry/node/errorTelemetry.js';
 +import { EnvironmentByokLmConnection } from './environmentByokLmConnection.js';
  
  // Entry point for the agent host utility process.
@@ -368,7 +363,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/agentHostM
  	// Setup RPC - supports both Electron utility process and Node child process
  	let server: ChildProcessServer<string> | UtilityProcessServer;
  	if (isUtilityProcess(process)) {
-@@ -104,6 +104,15 @@ async function startAgentHost(): Promise
+@@ -110,6 +110,15 @@ async function startAgentHost(): Promise
  	} else {
  		server = new ChildProcessServer(AgentHostIpcChannels.AgentHost);
  	}
@@ -383,8 +378,8 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/agentHostM
 +	}
  
  	const disposables = new DisposableStore();
- 
-@@ -128,7 +137,14 @@ async function startAgentHost(): Promise
+ 	const errorTelemetry = disposables.add(new MutableDisposable<ErrorTelemetry>());
+@@ -136,7 +145,14 @@ async function startAgentHost(): Promise
  
  	// File service
  	const fileService = disposables.add(new FileService(logService));
@@ -400,7 +395,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/agentHostM
  	// In-memory filesystem backing transient file-edit previews shown during
  	// tool-call confirmations.
  	disposables.add(registerPendingEditContentProvider(fileService));
-@@ -194,6 +210,18 @@ async function startAgentHost(): Promise
+@@ -203,6 +219,18 @@ async function startAgentHost(): Promise
  		// stays empty and the proxy never binds when the feature is off.
  		byokLmBridgeRegistry = new ByokLmBridgeRegistry();
  		diServices.set(IByokLmBridgeRegistry, byokLmBridgeRegistry);
@@ -419,8 +414,8 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/agentHostM
  		const byokLmProxyService = disposables.add(instantiationService.createInstance(ByokLmProxyService));
  		diServices.set(IByokLmProxyService, byokLmProxyService);
  		const agentHostOTelService = disposables.add(instantiationService.createInstance(AgentHostOTelService, fetchFn));
-@@ -450,6 +478,39 @@ async function startAgentHost(): Promise
- 	});
+@@ -588,6 +616,39 @@ function cleanupLocalAgentHostEndpoint(
+ 	}
  }
  
 +/** Receives exactly one secret-bearing bootstrap over the private parent/child IPC pipe. */
@@ -463,7 +458,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/agentSideE
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/node/agentSideEffects.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/agentSideEffects.ts
-@@ -225,7 +225,7 @@ export class AgentSideEffects extends Di
+@@ -250,7 +250,7 @@ export class AgentSideEffects extends Di
  			const models = reader ? a.models.read(reader) : a.models.get();
  			const customizations = a.getCustomizations?.();
  			return {
@@ -1048,7 +1043,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotAgent.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotAgent.ts
-@@ -438,6 +438,11 @@ export class CopilotAgent extends Dispos
+@@ -485,6 +485,11 @@ export class CopilotAgent extends Dispos
  			this._logService.info('[Copilot] BYOK bridge changed; refreshing models');
  			this._refreshByokModels();
  		}));
@@ -1060,7 +1055,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  
  		// `COPILOT_GH_HOST` is a subprocess env var (applied in `_ensureClient`) the
  		// CLI reads only at spawn time. When the configured GitHub Enterprise host
-@@ -475,7 +480,8 @@ export class CopilotAgent extends Dispos
+@@ -522,7 +527,8 @@ export class CopilotAgent extends Dispos
  	private _lastSystemProxyEnabled: boolean = this._isSystemProxyEnabled();
  
  	private _isSessionSyncEnabled(): boolean {
@@ -1070,7 +1065,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  	}
  
  	private _isRubberDuckEnabled(): boolean {
-@@ -544,15 +550,22 @@ export class CopilotAgent extends Dispos
+@@ -670,15 +676,22 @@ export class CopilotAgent extends Dispos
  	// ---- auth ---------------------------------------------------------------
  
  	getDescriptor(): IAgentDescriptor {
@@ -1084,7 +1079,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
 +				? localize('copilotByokAgent.description', "Copilot SDK agent using server-configured language models")
 +				: localize('copilotAgent.description', "Copilot SDK agent running in the local agent host process"),
 +			...(this._byokBridgeRegistry.getEnvironmentStatus() ? { byokStatus: this._byokBridgeRegistry.getEnvironmentStatus() } : {}),
- 			capabilities: { multipleChats: { fork: true } },
+ 			capabilities: { multipleChats: { fork: true, sideChat: true } },
  		};
  	}
  
@@ -1095,7 +1090,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  		return [
  			this._gitHubEndpointService.getCopilotResource(),
  			this._gitHubEndpointService.getRepoResource(),
-@@ -560,6 +573,9 @@ export class CopilotAgent extends Dispos
+@@ -686,6 +699,9 @@ export class CopilotAgent extends Dispos
  	}
  
  	async getNetworkDiagnosticsEndpoints(): Promise<readonly IAgentHostNetworkEndpoint[]> {
@@ -1105,7 +1100,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  		let capiUrl = process.env['VSCODE_AGENT_HOST_CAPI_URL_OVERRIDE'] || COPILOT_CAPI_URL;
  		if (this._githubToken) {
  			try {
-@@ -577,6 +593,9 @@ export class CopilotAgent extends Dispos
+@@ -703,6 +719,9 @@ export class CopilotAgent extends Dispos
  	}
  
  	async getNetworkDiagnosticsAccount(): Promise<string | undefined> {
@@ -1115,7 +1110,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  		return this._githubToken ? this._copilotApiService.resolveUserLogin?.(this._githubToken) : undefined;
  	}
  
-@@ -630,6 +649,9 @@ export class CopilotAgent extends Dispos
+@@ -779,6 +798,9 @@ export class CopilotAgent extends Dispos
  	}
  
  	async authenticate(resource: string, token: string): Promise<boolean> {
@@ -1125,7 +1120,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  		if (resource === this._gitHubEndpointService.getRepoResource().resource) {
  			return true;
  		}
-@@ -749,6 +771,12 @@ export class CopilotAgent extends Dispos
+@@ -969,6 +991,12 @@ export class CopilotAgent extends Dispos
  			return;
  		}
  
@@ -1138,7 +1133,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  		const tokenAtRefreshStart = this._githubToken;
  		if (!tokenAtRefreshStart) {
  			this._capiModels = [];
-@@ -790,7 +818,14 @@ export class CopilotAgent extends Dispos
+@@ -1010,7 +1038,14 @@ export class CopilotAgent extends Dispos
  	 * allocated each call so the observable always notifies its consumers.
  	 */
  	private _publishModels(): void {
@@ -1154,7 +1149,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  	}
  
  	/**
-@@ -815,7 +850,14 @@ export class CopilotAgent extends Dispos
+@@ -1035,7 +1070,14 @@ export class CopilotAgent extends Dispos
  				id: `${m.vendor}/${m.id}`,
  				name: m.name ?? m.id,
  				maxContextWindow: m.maxContextWindowTokens,
@@ -1169,7 +1164,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  				...(byokMeta && { _meta: byokMeta }),
  			};
  		});
-@@ -1766,7 +1808,7 @@ export class CopilotAgent extends Dispos
+@@ -2010,7 +2052,7 @@ export class CopilotAgent extends Dispos
  				snapshot,
  				activeClientToolSet: activeClient.toolSet,
  				shellManager,
@@ -1178,7 +1173,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  				model: provisional.model,
  				longContextWindow: this._longContextWindowFor(provisional.model?.id),
  				freeLongContext: this._isFreeLongContext(provisional.model?.id),
-@@ -2237,7 +2279,7 @@ export class CopilotAgent extends Dispos
+@@ -2533,7 +2575,7 @@ export class CopilotAgent extends Dispos
  					snapshot,
  					activeClientToolSet: activeClient.toolSet,
  					shellManager,
@@ -1187,7 +1182,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  					fallback: { model, longContextWindow: this._longContextWindowFor(model?.id), freeLongContext: this._isFreeLongContext(model?.id) },
  				};
  			} else {
-@@ -2251,7 +2293,7 @@ export class CopilotAgent extends Dispos
+@@ -2547,7 +2589,7 @@ export class CopilotAgent extends Dispos
  					snapshot,
  					activeClientToolSet: activeClient.toolSet,
  					shellManager,
@@ -1196,7 +1191,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  					model,
  					longContextWindow: this._longContextWindowFor(model?.id),
  					freeLongContext: this._isFreeLongContext(model?.id),
-@@ -2488,7 +2530,7 @@ export class CopilotAgent extends Dispos
+@@ -2794,7 +2836,7 @@ export class CopilotAgent extends Dispos
  				snapshot,
  				activeClientToolSet: activeClient.toolSet,
  				shellManager,
@@ -1205,7 +1200,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  				fallback: { model: info.model, longContextWindow: this._longContextWindowFor(info.model?.id), freeLongContext: this._isFreeLongContext(info.model?.id) },
  			};
  			let agentSession: CopilotAgentSession | undefined;
-@@ -2940,7 +2982,7 @@ export class CopilotAgent extends Dispos
+@@ -3256,7 +3298,7 @@ export class CopilotAgent extends Dispos
  			snapshot,
  			activeClientToolSet: activeClient.toolSet,
  			shellManager,
@@ -1902,7 +1897,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/nodeAgentH
  import { Emitter } from '../../../base/common/event.js';
  import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
  import { FileAccess, Schemas } from '../../../base/common/network.js';
-@@ -13,7 +14,8 @@ import { parseAgentHostDebugPort } from
+@@ -14,7 +15,8 @@ import { parseAgentHostDebugPort } from
  import { ILogService } from '../../log/common/log.js';
  import { getResolvedShellEnv } from '../../shell/node/shellEnv.js';
  import { IAgentHostConnection, IAgentHostStarter } from '../common/agent.js';
@@ -1912,7 +1907,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/nodeAgentH
  import '../common/agentHostStarter.config.contribution.js';
  
  /**
-@@ -38,6 +40,7 @@ export interface IAgentHostWebSocketConf
+@@ -39,6 +41,7 @@ export interface IAgentHostWebSocketConf
  export class NodeAgentHostStarter extends Disposable implements IAgentHostStarter {
  
  	private _wsConfig: IAgentHostWebSocketConfig | undefined;
@@ -1920,7 +1915,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/nodeAgentH
  
  	private readonly _onRequestConnection = this._register(new Emitter<void>());
  	readonly onRequestConnection = this._onRequestConnection.event;
-@@ -55,14 +58,24 @@ export class NodeAgentHostStarter extend
+@@ -56,14 +59,24 @@ export class NodeAgentHostStarter extend
  	 * Must be called before {@link start}. Triggers eager process start
  	 * via {@link onRequestConnection}.
  	 */
@@ -1946,7 +1941,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/nodeAgentH
  		// Resolve user shell environment so spawned tools/terminals inherit
  		// PATH and other vars from the user's login shell (macOS/Linux).
  		const shellEnv = await this._resolveShellEnv();
-@@ -110,6 +123,12 @@ export class NodeAgentHostStarter extend
+@@ -115,6 +128,12 @@ export class NodeAgentHostStarter extend
  			resourceAttributes: policyValue<Record<string, string>>(AgentHostOTelResourceAttributesSettingId),
  		});
  		Object.assign(env, otelEnv);
@@ -1959,7 +1954,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/nodeAgentH
  
  		// Forward WebSocket server configuration to the child process via env vars
  		if (this._wsConfig) {
-@@ -152,6 +171,14 @@ export class NodeAgentHostStarter extend
+@@ -157,6 +176,14 @@ export class NodeAgentHostStarter extend
  		}
  
  		const client = new Client(FileAccess.asFileUri('bootstrap-fork').fsPath, opts);
@@ -1974,7 +1969,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/nodeAgentH
  
  		const store = new DisposableStore();
  		store.add(client);
-@@ -171,4 +198,18 @@ export class NodeAgentHostStarter extend
+@@ -176,4 +203,18 @@ export class NodeAgentHostStarter extend
  			return {};
  		}
  	}
@@ -2631,7 +2626,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/serverAgentHostManager
  import { Event } from '../../base/common/event.js';
  import { Disposable, MutableDisposable, toDisposable } from '../../base/common/lifecycle.js';
  import { ProxyChannel } from '../../base/parts/ipc/common/ipc.js';
-@@ -39,6 +40,8 @@ interface IConnectionTrackerService {
+@@ -41,6 +42,8 @@ interface IConnectionTrackerService {
  
  enum Constants {
  	MaxRestarts = 5,
@@ -2640,12 +2635,18 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/serverAgentHostManager
  }
  
  export class ServerAgentHostManager extends Disposable implements IServerAgentHostManager {
-@@ -87,11 +90,10 @@ export class ServerAgentHostManager exte
+@@ -90,7 +93,7 @@ export class ServerAgentHostManager exte
  					this._connectionCount = 0;
  					this._lifetimeToken.clear();
  
--					if (this._restartCount <= Constants.MaxRestarts) {
-+					if (this._restartCount < Constants.MaxRestarts) {
+-					const willRestart = this._restartCount <= Constants.MaxRestarts;
++					const willRestart = this._restartCount < Constants.MaxRestarts;
+ 					reportAgentHostProcessError(this._telemetryService, {
+ 						kind: 'unexpectedExit',
+ 						code: e.code,
+@@ -99,9 +102,8 @@ export class ServerAgentHostManager exte
+ 					});
+ 					if (willRestart) {
  						this._logService.error(`ServerAgentHostManager: agent host terminated unexpectedly with code ${e.code}`);
 -						this._restartCount++;
  						connection.store.dispose();
@@ -2654,12 +2655,18 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/serverAgentHostManager
  					} else {
  						this._logService.error(`ServerAgentHostManager: agent host terminated with code ${e.code}, giving up after ${Constants.MaxRestarts} restarts`);
  					}
-@@ -104,21 +106,28 @@ export class ServerAgentHostManager exte
+@@ -114,7 +116,7 @@ export class ServerAgentHostManager exte
  				return;
  			}
  
--			if (this._restartCount <= Constants.MaxRestarts) {
-+			if (this._restartCount < Constants.MaxRestarts) {
+-			const willRestart = this._restartCount <= Constants.MaxRestarts;
++			const willRestart = this._restartCount < Constants.MaxRestarts;
+ 			reportAgentHostProcessError(this._telemetryService, {
+ 				kind: 'startFailed',
+ 				restartCount: this._restartCount,
+@@ -122,19 +124,26 @@ export class ServerAgentHostManager exte
+ 			}, error);
+ 			if (willRestart) {
  				this._logService.error('ServerAgentHostManager: agent host failed to start', error);
 -				this._restartCount++;
 -				this._start();
@@ -2686,7 +2693,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/serverAgentHostManager
  				this._updateLifetimeToken();
  			}
  		}));
-@@ -128,6 +137,7 @@ export class ServerAgentHostManager exte
+@@ -144,6 +153,7 @@ export class ServerAgentHostManager exte
  		const connectionTracker = ProxyChannel.toService<IConnectionTrackerService>(connection.client.getChannel(AgentHostIpcChannels.ConnectionTracker));
  		connection.store.add(connectionTracker.onDidChangeConnectionCount(count => {
  			this._connectionCount = count;
@@ -2745,56 +2752,33 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/server/node/webClientServer.ts
 +++ vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
-@@ -145,8 +145,16 @@ export class WebClientServer {
+@@ -145,8 +145,12 @@ export class WebClientServer {
  			if (pathname.startsWith(STATIC_PATH) && pathname.charCodeAt(STATIC_PATH.length) === CharCode.Slash) {
  				return this._handleStatic(req, res, pathname.substring(STATIC_PATH.length));
  			}
--			if (pathname === '/') {
--				return this._handleRoot(req, res, parsedUrl);
 +			if (pathname === '/agents' || pathname === '/agents/') {
 +				res.writeHead(302, { Location: `${pathname.endsWith('/') ? '../' : './'}${parsedUrl.search ?? ''}` });
 +				return void res.end();
 +			}
-+			if (pathname === '/editor') {
-+				res.writeHead(302, { Location: `./editor/${parsedUrl.search ?? ''}` });
-+				return void res.end();
-+			}
-+			if (pathname === '/' || pathname === '/editor/') {
-+				return this._handleWorkbench(req, res, parsedUrl, pathname === '/', pathname === '/editor/');
+ 			if (pathname === '/') {
+-				return this._handleRoot(req, res, parsedUrl);
++				return this._handleAgentsWorkbench(req, res, parsedUrl);
  			}
  			if (pathname === CALLBACK_PATH) {
  				// callback support
-@@ -256,9 +264,9 @@ export class WebClientServer {
+@@ -256,9 +260,9 @@ export class WebClientServer {
  	}
  
  	/**
 -	 * Handle HTTP requests for /
-+	 * Handle HTTP requests for the editor or Agents workbench.
++	 * Handle HTTP requests for the Agents workbench.
  	 */
 -	private async _handleRoot(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl: url.UrlWithParsedQuery): Promise<void> {
-+	private async _handleWorkbench(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl: url.UrlWithParsedQuery, isSessionsWindow: boolean, isNestedWorkbench: boolean): Promise<void> {
++	private async _handleAgentsWorkbench(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl: url.UrlWithParsedQuery): Promise<void> {
  
  		const getFirstHeader = (headerName: string) => {
  			const val = req.headers[headerName];
-@@ -267,7 +275,7 @@ export class WebClientServer {
- 
- 		// Prefix routes with basePath for clients
- 		const rootBase = relativeRoot(getOriginalUrl(req))
--		const vscodeBase = relativePath(getOriginalUrl(req))
-+		const vscodeBase = isNestedWorkbench ? '..' : relativePath(getOriginalUrl(req))
- 		const basePath = vscodeBase || getFirstHeader('x-forwarded-prefix') || this._basePath;
- 
- 		const queryConnectionToken = parsedUrl.query[connectionTokenQueryName];
-@@ -290,7 +298,7 @@ export class WebClientServer {
- 					newQuery[key] = parsedUrl.query[key];
- 				}
- 			}
--			const newLocation = url.format({ pathname: basePath, query: newQuery });
-+			const newLocation = url.format({ pathname: isNestedWorkbench ? './' : basePath, query: newQuery });
- 			responseHeaders['Location'] = newLocation;
- 
- 			res.writeHead(302, responseHeaders);
-@@ -367,8 +375,11 @@ export class WebClientServer {
+@@ -367,8 +371,11 @@ export class WebClientServer {
  		}
  
  		const appName = this._environmentService.args['app-name'];
@@ -2806,11 +2790,11 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
  			nameShort: appName,
  			nameLong: appName,
  			rootEndpoint: rootBase,
-@@ -396,6 +407,11 @@ export class WebClientServer {
+@@ -397,6 +404,11 @@ export class WebClientServer {
  		const workbenchWebConfiguration = {
  			remoteAuthority,
  			serverBasePath: basePath,
-+			isSessionsWindow,
++			isSessionsWindow: true,
 +			configurationDefaults: agentHostWebEnabled ? {
 +				'chat.agentHost.enabled': true,
 +				'chat.agentHost.byokModels.enabled': true,
@@ -2830,25 +2814,25 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/test/node/serverAgentHostMa
  import { Emitter, Event } from '../../../base/common/event.js';
  import { DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
  import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../base/test/common/utils.js';
-@@ -51,6 +52,7 @@ class MockChannel implements IChannel {
- 
+@@ -53,6 +54,7 @@ class MockChannel implements IChannel {
  class MockAgentHostStarter implements IAgentHostStarter {
  	private readonly _onDidProcessExit = new Emitter<{ code: number; signal: string }>();
+ 	private _startError: Error | undefined;
 +	startCount = 0;
  
  	readonly agentHostChannel = new MockChannel();
  	readonly loggerChannel: MockChannel;
-@@ -62,6 +64,7 @@ class MockAgentHostStarter implements IA
+@@ -64,6 +66,7 @@ class MockAgentHostStarter implements IA
  	}
  
  	async start(): Promise<IAgentHostConnection> {
 +		this.startCount++;
- 		const store = new DisposableStore();
- 		const client: IChannelClient = {
- 			getChannel: <T extends IChannel>(name: string): T => {
-@@ -198,4 +201,22 @@ suite('ServerAgentHostManager', () => {
- 		starter.fireProcessExit(1);
- 		assert.strictEqual(lifetimeService.hasActiveConsumers, false);
+ 		if (this._startError) {
+ 			const error = this._startError;
+ 			this._startError = undefined;
+@@ -262,4 +265,22 @@ suite('ServerAgentHostManager', () => {
+ 			},
+ 		}]);
  	});
 +
 +	test('process exit restarts the host after backoff', async () => {
@@ -2939,7 +2923,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostChatContribution.ts
 +++ vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostChatContribution.ts
-@@ -74,6 +74,20 @@ async function waitForLocalAgentHostActi
+@@ -75,6 +75,20 @@ async function waitForLocalAgentHostActi
  	}
  }
  
@@ -2960,15 +2944,15 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
  function getLocalAgentHostProviderForSessionType(sessionType: string): AgentProvider | undefined {
  	if (!isLocalAgentHostTarget(sessionType) || !sessionType.startsWith(LOCAL_AGENT_HOST_SESSION_TYPE_PREFIX)) {
  		return undefined;
-@@ -103,6 +117,7 @@ export class AgentHostContribution exten
+@@ -104,6 +118,7 @@ export class AgentHostContribution exten
  
  	private readonly _isSessionsWindow: boolean;
  	private readonly _enableSmokeTestDriver: boolean;
 +	private readonly _connectionAuthority: string;
+ 	private readonly _promptCacheNotification: AgentHostPromptCacheNotification | undefined;
  
  	constructor(
- 		@IAgentHostService private readonly _agentHostService: IAgentHostService,
-@@ -122,12 +137,18 @@ export class AgentHostContribution exten
+@@ -124,13 +139,18 @@ export class AgentHostContribution exten
  		super();
  		this._isSessionsWindow = environmentService.isSessionsWindow;
  		this._enableSmokeTestDriver = !!environmentService.enableSmokeTestDriver;
@@ -2977,18 +2961,18 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
  		if (!agentHostEnablementService.enabled) {
  			return;
  		}
+ 		this._promptCacheNotification = this._register(this._instantiationService.createInstance(AgentHostPromptCacheNotification));
  
 -		this._register(_agentHostFileSystemService.registerAuthority('local', this._agentHostService));
-+		// Local desktop hosts are registered here. Remote-backed services own
-+		// their authority registration because they must establish it before this
-+		// contribution (and retain it independently of agent discovery).
++		// Remote-backed services register their authority before agent discovery;
++		// the local desktop service continues to be owned by this contribution.
 +		if (!this._agentHostService.connectionAuthority) {
 +			this._register(_agentHostFileSystemService.registerAuthority(this._connectionAuthority, this._agentHostService));
 +		}
  
  		// React to root state changes (agent discovery / removal)
  		this._register(this._agentHostService.rootState.onDidChange(rootState => {
-@@ -214,6 +235,7 @@ export class AgentHostContribution exten
+@@ -217,6 +237,7 @@ export class AgentHostContribution exten
  		const agentId = sessionType;
  		const vendor = sessionType;
  		const ahService = this._agentHostService;
@@ -2996,7 +2980,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
  
  		// Chat session contribution.
  		// Keep the delegation picker available for local agent host sessions in
-@@ -223,12 +245,12 @@ export class AgentHostContribution exten
+@@ -226,12 +247,12 @@ export class AgentHostContribution exten
  			type: sessionType,
  			name: agentId,
  			displayName: agent.displayName,
@@ -3011,7 +2995,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
  			agentHostProviderId: agent.provider,
  			supportsDelegation: true,
  			capabilities: {
-@@ -244,7 +266,7 @@ export class AgentHostContribution exten
+@@ -247,7 +268,7 @@ export class AgentHostContribution exten
  		const agentRegistration = store.add(this._activeClientService.registerForAgent(sessionType));
  		const syncProvider = agentRegistration.syncProvider;
  
@@ -3020,7 +3004,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
  			syncedUri => agentRegistration.bundler.getOrigin(syncedUri)));
  		// `[Agent Host]` suffix disambiguates from the extension-host Copilot CLI harness, which uses the same displayName.
  		store.add(this._customizationHarnessService.registerExternalHarness({
-@@ -264,9 +286,9 @@ export class AgentHostContribution exten
+@@ -267,9 +288,9 @@ export class AgentHostContribution exten
  			agentId,
  			sessionType,
  			fullName: agent.displayName,
@@ -3030,8 +3014,8 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
 -			connectionAuthority: 'local',
 +			connectionAuthority: this._connectionAuthority,
  			resolveAuthentication: (resources) => this._resolveAuthenticationInteractively(resources),
+ 			promptCacheNotification: this._promptCacheNotification,
  		}));
- 		store.add(this._chatSessionsService.registerChatSessionContentProvider(sessionType, sessionHandler));
 Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/chat.contribution.ts
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/workbench/contrib/chat/browser/chat.contribution.ts
@@ -3110,7 +3094,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/browser/agentHo
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/browser/agentHostIpcChannelTransport.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/browser/agentHostIpcChannelTransport.ts
-@@ -58,8 +58,13 @@ export class AgentHostIpcChannelTranspor
+@@ -64,8 +64,13 @@ export class AgentHostIpcChannelTranspor
  		// host emits between open and our listener attaching.
  		this._register(this._channel.listen<string>('frame')(text => this._handleFrame(text)));
  		this._register(this._channel.listen<void>('close')(() => this._fireClose()));
@@ -3129,7 +3113,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentHos
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/common/agentHostFileSystemProvider.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentHostFileSystemProvider.ts
-@@ -189,6 +189,7 @@ export abstract class AHPFileSystemProvi
+@@ -187,6 +187,7 @@ export abstract class AHPFileSystemProvi
  	 * replacement registration instead of failing immediately.
  	 */
  	private readonly _authorities = new Map<string, IAuthorityEntry>();
@@ -3137,7 +3121,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentHos
  
  	/**
  	 * Fires the authority whose active connection has changed: added,
-@@ -230,6 +231,11 @@ export abstract class AHPFileSystemProvi
+@@ -228,6 +229,11 @@ export abstract class AHPFileSystemProvi
  	 * operations.
  	 */
  	registerAuthority(authority: string, connection: IRemoteFilesystemConnection): IDisposable {
@@ -3149,7 +3133,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentHos
  		let entry = this._authorities.get(authority);
  		if (!entry) {
  			entry = {
-@@ -265,6 +271,21 @@ export abstract class AHPFileSystemProvi
+@@ -263,6 +269,21 @@ export abstract class AHPFileSystemProvi
  		});
  	}
  
@@ -3171,7 +3155,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentHos
  	private _expireAuthority(authority: string, entry: IAuthorityEntry): void {
  		// A re-registration may have landed between scheduling and
  		// firing — bail in that case.
-@@ -282,6 +303,7 @@ export abstract class AHPFileSystemProvi
+@@ -280,6 +301,7 @@ export abstract class AHPFileSystemProvi
  			entry.connections.length = 0;
  		}
  		this._authorities.clear();
@@ -3179,7 +3163,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/agentHos
  		super.dispose();
  	}
  
-@@ -549,8 +571,13 @@ export abstract class AHPFileSystemProvi
+@@ -547,8 +569,13 @@ export abstract class AHPFileSystemProvi
  	// ---- Internals ----------------------------------------------------------
  
  	private _getConnection(authority: string): Promise<IRemoteFilesystemConnection> {
@@ -3197,7 +3181,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/agentHostS
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/node/agentHostServerMain.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/agentHostServerMain.ts
-@@ -215,7 +215,9 @@ async function main(): Promise<void> {
+@@ -219,7 +219,9 @@ async function main(): Promise<void> {
  
  	// File service
  	const fileService = disposables.add(new FileService(logService));
@@ -3386,16 +3370,16 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotAgentSession.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotAgentSession.ts
-@@ -1376,7 +1376,7 @@ export class CopilotAgentSession extends
- 			// direct-send path and is a no-op when the turn already exists.
- 			this.resetTurnState(turnId, senderClientId);
- 		}
+@@ -1606,7 +1606,7 @@ export class CopilotAgentSession extends
+ 	}
+ 
+ 	private async _send(prompt: string, attachments: readonly MessageAttachment[] | undefined, mode: CopilotSdkMode | undefined): Promise<void> {
 -		this._logService.info(`[Copilot:${this.sessionId}] sendMessage called: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}" (${attachments?.length ?? 0} attachments)`);
 +		this._logService.info(`[Copilot:${this.sessionId}] sendMessage called: ${prompt.length} chars, ${attachments?.length ?? 0} attachment(s)`);
  
  		const slashCommand = parseLeadingSlashCommand(prompt);
  		if (slashCommand?.command === 'compact') {
-@@ -1638,7 +1638,7 @@ export class CopilotAgentSession extends
+@@ -1879,7 +1879,7 @@ export class CopilotAgentSession extends
  			return;
  		}
  		this._steeringMessagesInFlight.add(steeringMessage.id);
@@ -3404,7 +3388,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  		try {
  			await this._reconcileMcpServerEnablement();
  			await this._wrapper.session.send({
-@@ -2625,10 +2625,9 @@ export class CopilotAgentSession extends
+@@ -2871,10 +2871,9 @@ export class CopilotAgentSession extends
  			return { action: 'decline' };
  		}
  
@@ -3416,7 +3400,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  
  			const schema = context.mode === 'url' ? undefined : context.requestedSchema;
  			const requiredSet = new Set(schema?.required ?? []);
-@@ -2677,7 +2676,7 @@ export class CopilotAgentSession extends
+@@ -2923,7 +2922,7 @@ export class CopilotAgentSession extends
  			}
  			return { action: 'accept', content };
  		} catch (error) {
@@ -3429,7 +3413,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotSessionLauncher.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotSessionLauncher.ts
-@@ -286,11 +286,11 @@ export function getCopilotContextTier(mo
+@@ -280,11 +280,11 @@ export function getCopilotContextTier(mo
  }
  
  /**
@@ -3446,7 +3430,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
   *
   * Each vendor maps to one `type: 'openai'` / `wireApi: 'completions'` provider
   * whose `baseUrl` points at the proxy and authenticates with the session-scoped
-@@ -308,6 +308,15 @@ export async function resolveByokSession
+@@ -302,6 +302,15 @@ export async function resolveByokSession
  	startProxy: () => Promise<IByokLmProxyHandle>,
  	logService: ILogService,
  ): Promise<{ providers?: NamedProviderConfig[]; models?: ProviderModelConfig[] }> {
@@ -3462,7 +3446,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  	// Surface the serving window's BYOK models. The registry does not union
  	// windows' model sets — all serving windows expose the same set, so it picks
  	// one (see `IByokLmBridgeRegistry`) and the proxy routes inference there.
-@@ -316,9 +325,15 @@ export async function resolveByokSession
+@@ -310,9 +319,15 @@ export async function resolveByokSession
  		byokModels = [...bridgeRegistry.getModels()];
  	} catch (err) {
  		logService.warn(`[Copilot:${sessionId}] Failed to enumerate BYOK models from renderer bridges`, err);
@@ -3478,7 +3462,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  		return {};
  	}
  	// Deduplicate by selection id (`vendor/id`). The same BYOK model can be
-@@ -335,28 +350,36 @@ export async function resolveByokSession
+@@ -329,28 +344,36 @@ export async function resolveByokSession
  		seenSelectionIds.add(selectionId);
  		return true;
  	});
@@ -3570,7 +3554,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copil
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/test/node/copilotAgent.test.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copilotAgent.test.ts
-@@ -1104,6 +1104,36 @@ suite('CopilotAgent', () => {
+@@ -1114,6 +1114,36 @@ suite('CopilotAgent', () => {
  		}
  	});
  
@@ -3611,7 +3595,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copil
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/test/node/copilotSessionLauncher.test.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copilotSessionLauncher.test.ts
-@@ -75,6 +75,38 @@ suite('resolveByokSessionConfig', () =>
+@@ -104,6 +104,38 @@ suite('resolveByokSessionConfig', () =>
  		assert.strictEqual(proxy.starts, 0);
  	});
  
@@ -3650,7 +3634,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copil
  	test('returns empty and never starts the proxy when the bridge reports no models', async () => {
  		const registry = new ByokLmBridgeRegistry();
  		const registration = registry.register('client-1', connectionOf([]));
-@@ -107,6 +139,7 @@ suite('resolveByokSessionConfig', () =>
+@@ -136,6 +168,7 @@ suite('resolveByokSessionConfig', () =>
  			{ vendor: 'acme', id: 'claude', name: 'Acme Claude', maxContextWindowTokens: 200000 },
  			{ vendor: 'acme', id: 'gpt', name: undefined, maxContextWindowTokens: undefined },
  			{ vendor: 'globex', id: 'llama', name: 'Globex Llama' },
@@ -3658,7 +3642,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copil
  		]));
  		const proxy = countingProxy();
  
-@@ -118,11 +151,13 @@ suite('resolveByokSessionConfig', () =>
+@@ -147,11 +180,13 @@ suite('resolveByokSessionConfig', () =>
  			providers: [
  				{ name: 'acme', type: 'openai', wireApi: 'completions', baseUrl: 'http://127.0.0.1:1/v/acme', bearerToken: 'NONCE.sess-1' },
  				{ name: 'globex', type: 'openai', wireApi: 'completions', baseUrl: 'http://127.0.0.1:1/v/globex', bearerToken: 'NONCE.sess-1' },
@@ -3676,7 +3660,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/proto
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/test/node/protocolServerHandler.test.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/protocolServerHandler.test.ts
-@@ -983,6 +983,73 @@ suite('ProtocolServerHandler', () => {
+@@ -1267,6 +1267,73 @@ suite('ProtocolServerHandler', () => {
  		assert.strictEqual(transport.sent.length, 0);
  	});
  
@@ -3857,7 +3841,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/browser/sessionsSetUpServ
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/sessions/browser/sessionsSetUpService.ts
 +++ vscode-agents-server/lib/vscode/src/vs/sessions/browser/sessionsSetUpService.ts
-@@ -99,6 +99,14 @@ class SessionsSetUpWidget extends Dispos
+@@ -102,6 +102,14 @@ class SessionsSetUpWidget extends Dispos
  			return;
  		}
  
@@ -3885,14 +3869,14 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/newC
  // #region --- New Chat Widget ---
  
 @@ -83,6 +84,7 @@ export class NewChatWidget extends Dispo
- 		@IWorkspaceTrustRequestService private readonly workspaceTrustRequestService: IWorkspaceTrustRequestService,
  		@IAquariumService private readonly aquariumService: IAquariumService,
  		@IAgentHostFilterService private readonly agentHostFilterService: IAgentHostFilterService,
+ 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 +		@IProductService private readonly productService: IProductService,
  	) {
  		super();
  		this._workspacePickerVisibleKey = SessionWorkspacePickerVisibleContext.bindTo(contextKeyService);
-@@ -286,6 +288,16 @@ export class NewChatWidget extends Dispo
+@@ -317,6 +319,16 @@ export class NewChatWidget extends Dispo
  			&& t.sessionType.id === pick.sessionTypeId);
  	}
  
@@ -3906,18 +3890,17 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/newC
 +		return preferred ? { providerId: preferred.providerId, sessionTypeId: preferred.sessionType.id } : undefined;
 +	}
 +
- 	private _createNewSession(folderUri: URI): void {
+ 	private async _createNewSession(folderUri: URI): Promise<IOpenNewSessionResult> {
  		this._pendingPreferredUpgrade.clear();
  		const userPick = this._newChatInput.sessionTypePicker.getUserPickedSessionType();
-@@ -305,12 +317,15 @@ export class NewChatWidget extends Dispo
+@@ -343,12 +355,14 @@ export class NewChatWidget extends Dispo
  	}
  
- 	private _createSessionNow(folderUri: URI, userPick: IPreferredSessionType | undefined): ISession | undefined {
+ 	private async _createSessionNow(folderUri: URI, userPick: IPreferredSessionType | undefined): Promise<IOpenNewSessionResult> {
 -		// Prefer the user's explicit pick when its provider can serve the
 -		// folder; otherwise fall back to the preferred (first) session type.
 -		const effectivePick = userPick && this._isPreferredServable(folderUri, userPick)
-+		// Prefer the user's explicit pick when its provider can serve the folder
-+		// on the scoped host; otherwise use that host's first session type.
++		// Keep the fallback scoped to the host selected by the workspace picker.
 +		const scopedProviderId = this._workspacePicker.selectedResolved?.providerId;
 +		const effectivePick = userPick
 +			&& (!scopedProviderId || userPick.providerId === scopedProviderId)
@@ -3928,9 +3911,9 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/newC
 +			: this._getPreferredSessionType(folderUri);
 +		const fallbackProviderId = scopedProviderId;
  		try {
- 			return this.sessionsService.openNewSession({
+ 			return await this.sessionsService.openNewSession({
  				folderUri,
-@@ -341,7 +356,7 @@ export class NewChatWidget extends Dispo
+@@ -379,7 +393,7 @@ export class NewChatWidget extends Dispo
  				} else {
  					// No explicit pick: keep the draft on the preferred (first)
  					// type. Recreate only when that preferred actually changed.
@@ -3939,7 +3922,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/newC
  					if (!preferred || (preferred.providerId === active.providerId && preferred.sessionTypeId === active.sessionType)) {
  						return;
  					}
-@@ -413,6 +428,13 @@ export class NewChatWidget extends Dispo
+@@ -451,6 +465,13 @@ export class NewChatWidget extends Dispo
  	 * workspace picker, which has its own loading affordance.
  	 */
  	private _renderEmptyStateGate(container: HTMLElement, chatWidgetContent: HTMLElement): IDisposable {
@@ -3957,7 +3940,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/sess
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/sessions/contrib/chat/browser/sessionWorkspacePicker.ts
 +++ vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/sessionWorkspacePicker.ts
-@@ -230,7 +230,11 @@ export class WorkspacePicker extends Dis
+@@ -203,7 +203,11 @@ export class WorkspacePicker extends Dis
  		this._register(this.sessionsProvidersService.onDidChangeProviders(() => {
  			if (this._selectedFolderUri) {
  				// Re-resolve in case the previous resolving provider was removed.
@@ -3983,16 +3966,16 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/webW
  import { localize } from '../../../../nls.js';
  import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
  import { ActionListItemKind, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
-@@ -20,6 +22,8 @@ import { ITelemetryService } from '../..
+@@ -18,6 +20,8 @@ import { INotificationService } from '..
+ import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
  import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
- import { IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
  import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 +import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 +import { IProductService } from '../../../../platform/product/common/productService.js';
  import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
+ import { ISessionsRecentWorkspacesService } from '../../../services/sessions/browser/sessionsRecentWorkspacesService.js';
  import { IAgentHostFilterService } from '../../../services/agentHostFilter/common/agentHostFilter.js';
- import { IWorkspacePickerItem, WorkspacePicker } from './sessionWorkspacePicker.js';
-@@ -62,6 +66,8 @@ export class WebWorkspacePicker extends
+@@ -60,6 +64,8 @@ export class WebWorkspacePicker extends
  		@INotificationService notificationService: INotificationService,
  		@IAgentHostFilterService private readonly _agentHostFilterService: IAgentHostFilterService,
  		@IWorkbenchLayoutService private readonly _layoutService: IWorkbenchLayoutService,
@@ -4001,7 +3984,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/webW
  	) {
  		super(
  			actionWidgetService,
-@@ -84,6 +90,57 @@ export class WebWorkspacePicker extends
+@@ -81,6 +87,57 @@ export class WebWorkspacePicker extends
  		// belongs to the selected host, reset it: prefer the most recent
  		// workspace for the new host, otherwise clear the selection.
  		this._register(this._agentHostFilterService.onDidChange(() => this._onScopedHostChanged()));
@@ -4059,7 +4042,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/webW
  	}
  
  	protected override _showTabs(): boolean {
-@@ -149,11 +206,29 @@ export class WebWorkspacePicker extends
+@@ -146,11 +203,29 @@ export class WebWorkspacePicker extends
  			return items;
  		}
  
@@ -4090,7 +4073,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/chat/browser/webW
  				continue;
  			}
  			const checked = this._isSelectedFolder(folderUri);
-@@ -169,7 +244,7 @@ export class WebWorkspacePicker extends
+@@ -166,7 +241,7 @@ export class WebWorkspacePicker extends
  
  		// 2. "Select Folder..." — dispatches the scoped provider's first browse action
  		const allBrowseActions = this._getAllBrowseActions();
@@ -4103,7 +4086,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/providers/agentHo
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/sessions/contrib/providers/agentHost/browser/baseAgentHostSessionsProvider.ts
 +++ vscode-agents-server/lib/vscode/src/vs/sessions/contrib/providers/agentHost/browser/baseAgentHostSessionsProvider.ts
-@@ -2165,6 +2165,15 @@ export abstract class BaseAgentHostSessi
+@@ -2222,6 +2222,15 @@ export abstract class BaseAgentHostSessi
  	/** Maps a project URI from the session summary to a local URI. Default identity; remote overrides for `file:` paths. */
  	protected mapProjectUri(uri: URI): URI { return uri; }
  
@@ -4119,7 +4102,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/providers/agentHo
  	// -- Session listing ------------------------------------------------------
  
  	getSessionTypes(_repositoryUri: URI): ISessionType[] {
-@@ -3948,7 +3957,8 @@ export abstract class BaseAgentHostSessi
+@@ -4137,7 +4146,8 @@ export abstract class BaseAgentHostSessi
  			return;
  		}
  		for (const entry of parsed as readonly ISerializedSessionMetadata[]) {
@@ -4129,7 +4112,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/providers/agentHo
  			if (!meta) {
  				continue;
  			}
-@@ -4021,7 +4031,7 @@ export abstract class BaseAgentHostSessi
+@@ -4214,7 +4224,7 @@ export abstract class BaseAgentHostSessi
  		this._sessionRefreshRetry.clear();
  		this._sessionRefreshInFlight = true;
  		try {
@@ -4242,8 +4225,8 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/providers/agentHo
  
  function createProvider(disposables: DisposableStore, agentHostService: MockAgentHostService, contributions = [
  	{ type: 'agent-host-copilotcli', name: 'copilot', displayName: 'Copilot', description: 'test', icon: undefined },
--], options?: { sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; acquireOrLoadSession?: (resource: URI) => Promise<IChatModelReference | undefined>; languageModelIds?: string[]; lookupLanguageModel?: (modelId: string) => ILanguageModelChatMetadata | undefined; openSession?: boolean; configurationService?: IConfigurationService; activeSession?: IObservable<IActiveSession | undefined>; visibleSessions?: IObservable<readonly (IActiveSession | undefined)[]>; storageService?: IStorageService; isSessionsWindow?: boolean; confirmDelete?: boolean; workspaceTrusted?: boolean; gitHubService?: IGitHubService; agentHostEnabled?: boolean }): LocalAgentHostSessionsProvider {
-+], options?: { sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; acquireOrLoadSession?: (resource: URI) => Promise<IChatModelReference | undefined>; languageModelIds?: string[]; lookupLanguageModel?: (modelId: string) => ILanguageModelChatMetadata | undefined; openSession?: boolean; configurationService?: IConfigurationService; activeSession?: IObservable<IActiveSession | undefined>; visibleSessions?: IObservable<readonly (IActiveSession | undefined)[]>; storageService?: IStorageService; isSessionsWindow?: boolean; confirmDelete?: boolean; workspaceTrusted?: boolean; gitHubService?: IGitHubService; agentHostEnabled?: boolean; codeServerAgentHostWebEnabled?: boolean }): LocalAgentHostSessionsProvider {
+-], options?: { sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; acquireOrLoadSession?: (resource: URI) => Promise<IChatModelReference | undefined>; languageModelIds?: string[]; lookupLanguageModel?: (modelId: string) => ILanguageModelChatMetadata | undefined; openSession?: boolean; configurationService?: IConfigurationService; activeSession?: IObservable<IActiveSession | undefined>; visibleSessions?: IObservable<readonly (IActiveSession | undefined)[]>; activeClient?: Omit<SessionActiveClient, 'clientId'>; storageService?: IStorageService; isSessionsWindow?: boolean; confirmDelete?: boolean; workspaceTrusted?: boolean; gitHubService?: IGitHubService; agentHostEnabled?: boolean }): LocalAgentHostSessionsProvider {
++], options?: { sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; acquireOrLoadSession?: (resource: URI) => Promise<IChatModelReference | undefined>; languageModelIds?: string[]; lookupLanguageModel?: (modelId: string) => ILanguageModelChatMetadata | undefined; openSession?: boolean; configurationService?: IConfigurationService; activeSession?: IObservable<IActiveSession | undefined>; visibleSessions?: IObservable<readonly (IActiveSession | undefined)[]>; activeClient?: Omit<SessionActiveClient, 'clientId'>; storageService?: IStorageService; isSessionsWindow?: boolean; confirmDelete?: boolean; workspaceTrusted?: boolean; gitHubService?: IGitHubService; agentHostEnabled?: boolean; codeServerAgentHostWebEnabled?: boolean }): LocalAgentHostSessionsProvider {
  	const instantiationService = disposables.add(new TestInstantiationService());
  
  	instantiationService.stub(IAgentHostService, agentHostService);
@@ -4254,7 +4237,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/contrib/providers/agentHo
  	instantiationService.stub(IWorkspaceTrustManagementService, new class extends mock<IWorkspaceTrustManagementService>() {
  		override isWorkspaceTrusted(): boolean { return options?.workspaceTrusted ?? true; }
  		override async getUriTrustInfo(uri: URI) { return { uri, trusted: options?.workspaceTrusted ?? true }; }
-@@ -3269,6 +3271,24 @@ suite('LocalAgentHostSessionsProvider',
+@@ -3608,6 +3610,24 @@ suite('LocalAgentHostSessionsProvider',
  		assert.strictEqual(workspace!.label, 'myrepo');
  	}));
  
@@ -4395,7 +4378,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/browser
 --- vscode-agents-server.orig/lib/vscode/src/vs/sessions/services/sessions/browser/sessionsManagementService.ts
 +++ vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/browser/sessionsManagementService.ts
 @@ -27,6 +27,8 @@ import { IDeleteChatOptions, ISessionCha
- import { IChat, ISession, ISessionWorkspace, SessionStatus, ISessionType } from '../common/session.js';
+ import { IChat, ISession, ISessionWorkspace, ISideChatSelection, SessionStatus, ISessionType } from '../common/session.js';
  import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
  import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 +import { IProductService } from '../../../../platform/product/common/productService.js';
@@ -4403,7 +4386,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/browser
  
  /** Storage key for the last session type used to create a quick chat. */
  const LAST_USED_QUICK_CHAT_SESSION_TYPE_STORAGE_KEY = 'sessions.quickChat.lastUsedSessionType';
-@@ -93,6 +95,7 @@ export class SessionsManagementService e
+@@ -96,6 +98,7 @@ export class SessionsManagementService e
  		@IStorageService private readonly storageService: IStorageService,
  		@IPathService private readonly pathService: IPathService,
  		@IRemoteAgentHostService private readonly remoteAgentHostService: IRemoteAgentHostService,
@@ -4411,7 +4394,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/browser
  	) {
  		super();
  
-@@ -215,7 +218,7 @@ export class SessionsManagementService e
+@@ -218,7 +221,7 @@ export class SessionsManagementService e
  
  	getSessionTypesForFolder(folderUri: URI): IProviderSessionType[] {
  		const result: IProviderSessionType[] = [];
@@ -4420,7 +4403,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/browser
  			if (!provider.resolveWorkspace(folderUri)) {
  				continue;
  			}
-@@ -228,7 +231,7 @@ export class SessionsManagementService e
+@@ -231,7 +234,7 @@ export class SessionsManagementService e
  
  	getQuickChatSessionTypes(): IProviderSessionType[] {
  		const result: IProviderSessionType[] = [];
@@ -4429,7 +4412,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/browser
  			if (!provider.supportsQuickChats) {
  				continue;
  			}
-@@ -252,7 +255,7 @@ export class SessionsManagementService e
+@@ -277,7 +280,7 @@ export class SessionsManagementService e
  	private _collectSessionTypes(): ISessionType[] {
  		const types: ISessionType[] = [];
  		const seen = new Set<string>();
@@ -4438,7 +4421,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/browser
  			for (const type of provider.sessionTypes) {
  				if (!seen.has(type.id)) {
  					seen.add(type.id);
-@@ -263,6 +266,19 @@ export class SessionsManagementService e
+@@ -288,6 +291,19 @@ export class SessionsManagementService e
  		return types;
  	}
  
@@ -4458,7 +4441,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/browser
  	private _updateSessionTypes(): void {
  		// Always fire — the deduplicated flat list (used by surfaces that
  		// only need a set of type ids) may be unchanged, but the per-folder
-@@ -295,7 +311,7 @@ export class SessionsManagementService e
+@@ -320,7 +336,7 @@ export class SessionsManagementService e
  	 * {@link createNewSession}. Throws when no provider/type can be resolved.
  	 */
  	private _resolveProviderForNewSession(folderUri: URI, options?: ICreateNewSessionOptions): { provider: ISessionsProvider; sessionTypeId: string } {
@@ -4478,8 +4461,8 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/test/br
 +import { IProductService } from '../../../../../platform/product/common/productService.js';
  import { InMemoryStorageService, IStorageService } from '../../../../../platform/storage/common/storage.js';
  import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
- import { ChatViewPaneTarget, IChatWidget, IChatWidgetService } from '../../../../../workbench/contrib/chat/browser/chat.js';
-@@ -1265,6 +1266,11 @@ suite('SessionsManagementService', () =>
+ import { IWorkspaceTrustRequestService } from '../../../../../platform/workspace/common/workspaceTrust.js';
+@@ -1677,6 +1678,11 @@ suite('SessionsManagementService', () =>
  		assert.deepStrictEqual(service.getAllSessionTypes().map(type => type.id), ['agent-host', 'copilot']);
  	});
  
@@ -4491,7 +4474,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/test/br
  	test('replacing the active session promotes the committed session to active', async () => {
  		const draft = stubSession({ sessionId: 'draft', providerId: 'test' });
  		const committed = stubSession({ sessionId: 'committed', providerId: 'test' });
-@@ -1929,7 +1935,7 @@ suite('SessionsManagementService', () =>
+@@ -2408,7 +2414,7 @@ suite('SessionsManagementService', () =>
   * Used to assert that the management service surfaces session types ordered by
   * provider order (lower first).
   */
@@ -4500,7 +4483,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/sessions/services/sessions/test/br
  	const copilotProvider = new class extends TestSessionsProvider {
  		override readonly id = 'default-copilot';
  		override readonly order = copilotOrder;
-@@ -1952,6 +1958,7 @@ function createOrderedTypesService(dispo
+@@ -2431,6 +2437,7 @@ function createOrderedTypesService(dispo
  	instantiationService.stub(IChatService, new class extends mock<IChatService>() {
  		override readonly onDidSubmitRequest = Event.None;
  	});
@@ -4528,7 +4511,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts
 +++ vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts
-@@ -3010,7 +3010,7 @@ export class AgentHostSessionHandler ext
+@@ -3274,7 +3274,7 @@ export class AgentHostSessionHandler ext
  		opts: IObserveTurnOptions,
  	): void {
  		const inputReq = part$.get().request;
@@ -4541,7 +4524,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/stateToProgressAdapter.ts
 +++ vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/stateToProgressAdapter.ts
-@@ -227,7 +227,7 @@ export function createInputRequestCarous
+@@ -230,7 +230,7 @@ export function createInputRequestCarous
  	);
  }
  
@@ -4550,7 +4533,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
  	return new ChatPlanReviewData(
  		planReview.title,
  		planReview.content,
-@@ -239,7 +239,7 @@ export function createInputRequestPlanRe
+@@ -242,7 +242,7 @@ export function createInputRequestPlanRe
  			...(action.permissionLevel ? { permissionLevel: action.permissionLevel } : {}),
  		})),
  		planReview.canProvideFeedback,
@@ -4559,7 +4542,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/browser/age
  		inputReq.id,
  	);
  }
-@@ -266,7 +266,7 @@ export function inputRequestResponsePart
+@@ -269,7 +269,7 @@ export function inputRequestResponsePart
  	const inputReq = part.request;
  	const planReview = (inputReq as ChatInputRequestWithPlanReview).planReview;
  	if (planReview) {
@@ -4572,7 +4555,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/test/browse
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/workbench/contrib/chat/test/browser/agentSessions/agentHostChatContribution.test.ts
 +++ vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/test/browser/agentSessions/agentHostChatContribution.test.ts
-@@ -126,6 +126,7 @@ type SeededSessionState = SessionState &
+@@ -135,6 +135,7 @@ type SeededSessionState = SessionState &
  
  class MockAgentHostService extends mock<IAgentHostService>() {
  	declare readonly _serviceBrand: undefined;
@@ -4580,7 +4563,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/test/browse
  
  	private readonly _onDidAction = new Emitter<ActionEnvelope>();
  	override readonly onDidAction = this._onDidAction.event;
-@@ -6976,6 +6977,18 @@ suite('AgentHostChatContribution', () =>
+@@ -7314,6 +7315,18 @@ suite('AgentHostChatContribution', () =>
  
  	suite('dynamic discovery', () => {
  
@@ -4604,11 +4587,11 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/test/browse
 --- vscode-agents-server.orig/lib/vscode/src/vs/workbench/contrib/chat/test/browser/agentSessions/stateToProgressAdapter.test.ts
 +++ vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/test/browser/agentSessions/stateToProgressAdapter.test.ts
 @@ -14,7 +14,7 @@ import { fromAgentHostUri, toAgentHostUr
- import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, readUsageInfoMeta, type ActiveTurn, type ICompletedToolCall, type ToolCallPendingConfirmationState, type ToolCallRunningState, type Turn, type ToolCallResponsePart, ToolCallCancellationReason, type Message } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+ import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, readUsageInfoMeta, type ActiveTurn, type ICompletedToolCall, type ToolCallPendingConfirmationState, type ToolCallRunningState, type Turn, type ToolCallResponsePart, ToolCallCancellationReason, type Message, type ToolResultContent } from '../../../../../../platform/agentHost/common/state/sessionState.js';
  import { IChatToolInvocation, IChatToolInvocationSerialized, ToolConfirmKind, type IChatMarkdownContent, type IChatTerminalToolInvocationData, type IChatThinkingPart, type IChatUsage } from '../../../common/chatService/chatService.js';
  import { isToolResultInputOutputDetails, type IToolResultInputOutputDetails, ToolDataSource, ToolInvocationPresentation } from '../../../common/tools/languageModelToolsService.js';
--import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, toolCallStateToPreparedInvocation as rawToolCallStateToPreparedInvocation, toolCallStateToStreamingInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData, usageInfoToAutoModeResolution, usageInfoToQuotas, formatTurnResponseDetails, rewriteAgentHostLinkTarget, rewriteMarkdownLinks, type TurnModelLookup } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
-+import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, toolCallStateToPreparedInvocation as rawToolCallStateToPreparedInvocation, toolCallStateToStreamingInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData, usageInfoToAutoModeResolution, usageInfoToQuotas, formatTurnResponseDetails, createInputRequestPlanReview, rewriteAgentHostLinkTarget, rewriteMarkdownLinks, type TurnModelLookup } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
+-import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, completedToolCallToSerialized, toolCallStateToInvocation as rawToolCallStateToInvocation, toolCallStateToPreparedInvocation as rawToolCallStateToPreparedInvocation, toolCallStateToStreamingInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData, usageInfoToAutoModeResolution, usageInfoToQuotas, formatTurnResponseDetails, rewriteAgentHostLinkTarget, rewriteMarkdownLinks, type TurnModelLookup } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
++import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, completedToolCallToSerialized, toolCallStateToInvocation as rawToolCallStateToInvocation, toolCallStateToPreparedInvocation as rawToolCallStateToPreparedInvocation, toolCallStateToStreamingInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData, usageInfoToAutoModeResolution, usageInfoToQuotas, formatTurnResponseDetails, createInputRequestPlanReview, rewriteAgentHostLinkTarget, rewriteMarkdownLinks, type TurnModelLookup } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
  
  // ---- Helper factories -------------------------------------------------------
  
@@ -4643,7 +4626,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/services/agentHost/brows
  import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
  import { ILogService } from '../../../../platform/log/common/log.js';
 +import { IProductService } from '../../../../platform/product/common/productService.js';
- import { AgentHostIpcChannels, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentHostInspectInfo, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkFetchResult, IAgentHostService, IAgentHostSocketInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, AuthenticateParams, AuthenticateResult, IMcpNotification } from '../../../../platform/agentHost/common/agentService.js';
+ import { AgentHostIpcChannels, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentHostInspectInfo, IAgentHostManagedSettingsDiagnostics, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkFetchResult, IAgentHostService, IAgentHostSocketInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, AuthenticateParams, AuthenticateResult, IMcpNotification } from '../../../../platform/agentHost/common/agentService.js';
  import { IAgentHostEnablementService } from '../../../../platform/agentHost/common/agentHostEnablementService.js';
  import { AgentHostIpcChannelTransport } from '../../../../platform/agentHost/browser/agentHostIpcChannelTransport.js';
  import { RemoteAgentHostProtocolClient } from '../../../../platform/agentHost/browser/remoteAgentHostProtocolClient.js';
@@ -4656,10 +4639,10 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/services/agentHost/brows
  import type { InitializeResult } from '../../../../platform/agentHost/common/state/protocol/common/commands.js';
  import { IRemoteAgentService } from '../../remote/common/remoteAgentService.js';
 +import { IAgentHostFileSystemService } from '../common/agentHostFileSystemService.js';
+ import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
+ import { agentsWindowAgentHostClientInfo, editorWindowAgentHostClientInfo } from '../../../../platform/agentHost/common/agentHostClientInfo.js';
  
- const REMOTE_NOT_SUPPORTED = (op: string) => new Error(`${op} is not supported when the agent host runs on a remote.`);
- const LOG_PREFIX = '[AgentHost:remote]';
-@@ -42,6 +45,7 @@ const LOG_PREFIX = '[AgentHost:remote]';
+@@ -44,6 +47,7 @@ const LOG_PREFIX = '[AgentHost:remote]';
   */
  export class EditorRemoteAgentHostServiceClient extends Disposable implements IAgentHostService {
  	declare readonly _serviceBrand: undefined;
@@ -4667,35 +4650,27 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/services/agentHost/brows
  
  	private readonly _onAgentHostExit = this._register(new Emitter<number>());
  	readonly onAgentHostExit: Event<number> = this._onAgentHostExit.event;
-@@ -68,11 +72,14 @@ export class EditorRemoteAgentHostServic
- 		@IAgentHostEnablementService agentHostEnablementService: IAgentHostEnablementService,
+@@ -71,11 +75,14 @@ export class EditorRemoteAgentHostServic
  		@IInstantiationService instantiationService: IInstantiationService,
  		@ILogService private readonly _logService: ILogService,
+ 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 +		@IAgentHostFileSystemService agentHostFileSystemService: IAgentHostFileSystemService,
 +		@IProductService productService: IProductService,
  	) {
  		super();
  
  		const enabled = agentHostEnablementService.enabled;
- 		const connection = remoteAgentService.getConnection();
+ 		const connection = this._remoteAgentService.getConnection();
 +		this.connectionAuthority = connection ? agentHostAuthority(`vscode-remote://${connection.remoteAuthority}`) : undefined;
  		this._logService.info(`${LOG_PREFIX} Initializing (enabled=${enabled}, remoteAuthority=${connection?.remoteAuthority ?? 'none'})`);
  
  		if (!enabled) {
-@@ -93,6 +100,18 @@ export class EditorRemoteAgentHostServic
- 		const transport = new AgentHostIpcChannelTransport(channel);
+@@ -96,6 +103,10 @@ export class EditorRemoteAgentHostServic
  		const address = `vscode-remote://${connection.remoteAuthority}`;
- 		this._protocolClient = this._register(instantiationService.createInstance(RemoteAgentHostProtocolClient, address, transport, undefined));
-+		// The remote protocol client wraps file:// resources with an authority
-+		// derived from its address. Register that authority against this same
-+		// connection so the workbench can resolve session worktrees, diffs and
-+		// workspace MCP configuration through vscode-agent-host:// URIs.
+ 		const clientInfo = environmentService.isSessionsWindow ? agentsWindowAgentHostClientInfo : editorWindowAgentHostClientInfo;
+ 		this._protocolClient = this._register(instantiationService.createInstance(RemoteAgentHostProtocolClient, address, createTransport, undefined, undefined, clientInfo));
 +		this._register(agentHostFileSystemService.registerAuthority(this.connectionAuthority!, this));
 +		if (productService.codeServerAgentHostWebEnabled) {
-+			// A code-server deployment has one ambient server-side Agent Host,
-+			// while its externally visible remote authority can change when the
-+			// user switches hostname or reverse-proxy route. Persisted session
-+			// URIs from an older public address still belong to this same host.
 +			this._register(agentHostFileSystemService.registerFallback(this));
 +		}
  		this._register(this._protocolClient.onDidClose(() => {
@@ -4726,3 +4701,25 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/services/agentHost/commo
  	ensureSyncedCustomizationProvider(): void {
  		if (!this._syncedCustomizationProviderRegistered) {
  			this._syncedCustomizationProviderRegistered = true;
+Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/browser/agentHostEnablementService.test.ts
+===================================================================
+--- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/test/browser/agentHostEnablementService.test.ts
++++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/browser/agentHostEnablementService.test.ts
+@@ -8,6 +8,7 @@ import { isWeb } from '../../../../base/
+ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
+ import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
+ import { MockContextKeyService } from '../../../keybinding/test/common/mockKeybindingService.js';
++import type { IProductService } from '../../../product/common/productService.js';
+ import { AgentHostEnablementService } from '../../browser/agentHostEnablementService.js';
+ import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../common/agentHostEnablementService.js';
+ 
+@@ -27,7 +28,8 @@ suite('AgentHostEnablementService', () =
+ 				'chat.disableAIFeatures': aiFeaturesDisabled,
+ 			});
+ 			const contextKeyService = disposables.add(new MockContextKeyService());
+-			const service = disposables.add(new AgentHostEnablementService(configurationService, contextKeyService));
++			const productService = { _serviceBrand: undefined } as IProductService;
++			const service = disposables.add(new AgentHostEnablementService(configurationService, contextKeyService, productService));
+ 			return {
+ 				enabled: service.enabled,
+ 				contextKey: contextKeyService.getContextKeyValue(AGENT_HOST_ENABLED_CONTEXT_KEY.key),

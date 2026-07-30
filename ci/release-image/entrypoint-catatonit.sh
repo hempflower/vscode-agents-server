@@ -24,4 +24,4 @@ if [ -d "${ENTRYPOINTD}" ]; then
   find "${ENTRYPOINTD}" -type f -executable -print -exec {} \;
 fi
 
-exec catatonit -- /usr/bin/code-server "$@"
+exec catatonit -- /usr/bin/vscode-agents-server "$@"

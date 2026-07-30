@@ -62,7 +62,7 @@ ingress:
 # Optional additional arguments
 extraArgs: []
   # These are the arguments normally passed to code-server; run
-  # code-server --help for a list of available options.
+  # vscode-agents-server --help for a list of available options.
   #
   # Each argument and parameter must have its own entry; if you use
   # --param value on the command line, then enter it here as:

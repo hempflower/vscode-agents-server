@@ -10,7 +10,7 @@
   "repository": "https://github.com/coder/code-server",
   "scripts": {
     "clean": "./ci/build/clean.sh",
-    "build": "./ci/build/build-code-server.sh",
+    "build": "./ci/build/build-vscode-agents-server.sh",
     "build:vscode": "./ci/build/build-vscode.sh",
     "doctoc": "./ci/dev/doctoc.sh",
     "release": "./ci/build/build-release.sh",
@@ -73,6 +73,7 @@
     "cookie-parser": "^1.4.6",
     "env-paths": "^2.2.1",
     "express": "^5.0.1",
+    "express-rate-limit": "^8.6.1",
     "http-proxy": "^1.18.1",
     "httpolyglot": "^0.1.2",
     "i18next": "^26.3.1",
@@ -90,8 +91,11 @@
   "resolutions": {
     "@types/node": "22.x"
   },
+  "overrides": {
+    "brace-expansion": "5.0.9"
+  },
   "bin": {
-    "code-server": "out/node/entry.js"
+    "vscode-agents-server": "out/node/entry.js"
   },
   "keywords": [
     "vscode",

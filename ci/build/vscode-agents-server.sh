@@ -2,7 +2,7 @@
 set -eu
 
 # This script is intended to be bundled into the standalone releases.
-# Runs code-server with the bundled node binary.
+# Runs vscode-agents-server with the bundled node binary.
 
 _realpath() {
   # See https://github.com/coder/code-server/issues/1537 on why no realpath or readlink -f.

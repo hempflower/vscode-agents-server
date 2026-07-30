@@ -6,35 +6,23 @@ const routes = {
     /\.\/manifest.json/,
     /\.\/_static\//,
     /[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/[a-z]+-[0-9a-z]+\/static\//,
   ],
   "/vscode": [
     /\.\/vscode\/manifest.json/,
     /\.\/_static\//,
     /vscode\/[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
   ],
   "/vscode/": [
     /\.\/manifest.json/,
     /\.\/\.\.\/_static\//,
     /[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
-  ],
-  "/editor/": [
-    /\.\.\/manifest.json/,
-    /\.\.\/_static\//,
-    /\.\.\/[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/[a-z]+-[0-9a-z]+\/static\//,
-  ],
-  "/vscode/editor/": [
-    /\.\.\/manifest.json/,
-    /\.\.\/\.\.\/_static\//,
-    /\.\.\/[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
+    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
   ],
 }
 
-describe("VS Code Routes", ["--disable-workspace-trust"], {}, async () => {
+describe("VS Code Routes", [], {}, async () => {
   const testName = "vscode-routes-default"
   test.beforeAll(async () => {
     await clean(testName)
@@ -71,31 +59,27 @@ describe("VS Code Routes", ["--disable-workspace-trust"], {}, async () => {
   })
 })
 
-describe(
-  "VS Code root Agents route authentication",
-  ["--disable-workspace-trust", "--auth", "password"],
-  {},
-  async () => {
-    test("should require authentication", async ({ codeServer }) => {
-      const response = await fetch(`${await codeServer.address()}/`, { redirect: "manual" })
-      expect(response.status).toBe(302)
-      expect(response.headers.get("location")).toContain("login")
-    })
-  },
-)
+describe("VS Code root Agents route authentication", ["--auth", "password"], {}, async () => {
+  test("should require authentication", async ({ codeServer }) => {
+    const response = await fetch(`${await codeServer.address()}/`, { redirect: "manual" })
+    expect(response.status).toBe(302)
+    expect(response.headers.get("location")).toContain("login")
+  })
+})
 
-describe("VS Code Agents route disabled", ["--disable-workspace-trust", "--disable-agents"], {}, async () => {
-  test("should return 404 for Agents routes while keeping the editor available", async ({ codeServer }) => {
+describe("VS Code editor route disabled", [], {}, async () => {
+  test("should not expose editor routes", async ({ codeServer }) => {
     const address = await codeServer.address()
-    expect((await fetch(`${address}/`)).status).toBe(404)
-    expect((await fetch(`${address}/agents/`)).status).toBe(404)
-    expect((await fetch(`${address}/editor/`)).status).toBe(200)
+    expect((await fetch(`${address}/editor`)).status).toBe(404)
+    expect((await fetch(`${address}/editor/`)).status).toBe(404)
+    expect((await fetch(`${address}/vscode/editor/`)).status).toBe(404)
   })
 })
 
 const CODE_WORKSPACE_DIR = process.env.CODE_WORKSPACE_DIR || ""
-describe("VS Code Routes with code-workspace", ["--disable-workspace-trust", CODE_WORKSPACE_DIR], {}, async () => {
+describe("VS Code Routes with code-workspace", [CODE_WORKSPACE_DIR], {}, async () => {
   test("should redirect to the passed in workspace using human-readable query", async ({ codeServerPage }) => {
+    await codeServerPage.navigate("/")
     const url = new URL(codeServerPage.page.url())
     const pathname = getMaybeProxiedPathname(url)
     expect(pathname).toBe("/")
@@ -104,8 +88,9 @@ describe("VS Code Routes with code-workspace", ["--disable-workspace-trust", COD
 })
 
 const CODE_FOLDER_DIR = process.env.CODE_FOLDER_DIR || ""
-describe("VS Code Routes with code-workspace", ["--disable-workspace-trust", CODE_FOLDER_DIR], {}, async () => {
+describe("VS Code Routes with code-workspace", [CODE_FOLDER_DIR], {}, async () => {
   test("should redirect to the passed in folder using human-readable query", async ({ codeServerPage }) => {
+    await codeServerPage.navigate("/")
     const url = new URL(codeServerPage.page.url())
     const pathname = getMaybeProxiedPathname(url)
     expect(pathname).toBe("/")
@@ -113,26 +98,21 @@ describe("VS Code Routes with code-workspace", ["--disable-workspace-trust", COD
   })
 })
 
-describe(
-  "VS Code Routes with ignore-last-opened",
-  ["--disable-workspace-trust", "--ignore-last-opened"],
-  {},
-  async () => {
-    test("should not redirect", async ({ codeServerPage }) => {
-      const folder = process.env.CODE_FOLDER_DIR
+describe("VS Code Routes with ignore-last-opened", ["--ignore-last-opened"], {}, async () => {
+  test("should not redirect", async ({ codeServerPage }) => {
+    const folder = process.env.CODE_FOLDER_DIR
 
-      await codeServerPage.navigate(`/?folder=${folder}`)
-      await codeServerPage.navigate(`/`)
+    await codeServerPage.navigate(`/?folder=${folder}`)
+    await codeServerPage.navigate(`/`)
 
-      const url = new URL(codeServerPage.page.url())
-      const pathname = getMaybeProxiedPathname(url)
-      expect(pathname).toBe("/")
-      expect(url.search).toBe("")
-    })
-  },
-)
+    const url = new URL(codeServerPage.page.url())
+    const pathname = getMaybeProxiedPathname(url)
+    expect(pathname).toBe("/")
+    expect(url.search).toBe("")
+  })
+})
 
-describe("VS Code Routes with no workspace or folder", ["--disable-workspace-trust"], {}, async () => {
+describe("VS Code Routes with no workspace or folder", [], {}, async () => {
   test("should redirect to last query folder/workspace", async ({ codeServerPage }) => {
     const folder = process.env.CODE_FOLDER_DIR
     const workspace = process.env.CODE_WORKSPACE_DIR
@@ -150,7 +130,7 @@ describe("VS Code Routes with no workspace or folder", ["--disable-workspace-tru
   })
 })
 
-describe("VS Code Routes with no workspace or folder", ["--disable-workspace-trust"], {}, async () => {
+describe("VS Code Routes with no workspace or folder", [], {}, async () => {
   test("should not redirect if ew passed in", async ({ codeServerPage }) => {
     const folder = process.env.CODE_FOLDER_DIR
     const workspace = process.env.CODE_WORKSPACE_DIR

@@ -3,6 +3,7 @@ base-path.diff
 proposed-api.diff
 marketplace.diff
 webview.diff
+csp-hashes.diff
 disable-builtin-ext-update.diff
 insecure-notification.diff
 update-check.diff
@@ -24,6 +25,6 @@ trusted-domains.diff
 signature-verification.diff
 copilot.diff
 app-name.diff
-csp-hashes.diff
 agents-web.diff
 autopilot-task-complete.diff
+core-ci-server-web.diff

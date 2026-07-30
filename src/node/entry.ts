@@ -24,24 +24,12 @@ async function entry(): Promise<void> {
   const configArgs = await readConfigFile(cliArgs.config)
   const args = await setDefaults(cliArgs, configArgs)
 
-  // Capture the catalogue and referenced secrets before the supervised server
-  // child is forked. The payload crosses the existing one-shot parent/child IPC
-  // handshake; only the scrubbed environment is inherited by subprocesses.
-  const byokConfigurationPath = args["agents-byok-config"]
-  delete args["agents-byok-config"]
-  const byokBootstrap = byokConfigurationPath
-    ? await consumeByokBootstrapFile(byokConfigurationPath)
-    : undefined
-  if (byokBootstrap) {
-    args["agent-host-byok-config"] = JSON.stringify(byokBootstrap)
-  }
-
   if (args.help) {
-    console.log("code-server", getVersionString())
+    console.log("vscode-agents-server", getVersionString())
     console.log("")
-    console.log(`Usage: code-server [options] [path]`)
-    console.log(`    - Opening a directory: code-server ./path/to/your/project`)
-    console.log(`    - Opening a saved workspace: code-server ./path/to/your/project.code-workspace`)
+    console.log(`Usage: vscode-agents-server [options] [path]`)
+    console.log(`    - Opening a directory: vscode-agents-server ./path/to/your/project`)
+    console.log(`    - Opening a saved workspace: vscode-agents-server ./path/to/your/project.code-workspace`)
     console.log("")
     console.log("Options")
     optionDescriptions().forEach((description) => {
@@ -58,6 +46,18 @@ async function entry(): Promise<void> {
     }
     return
   }
+
+  const byokConfigurationPath = args["agents-byok-config"]
+  if (!byokConfigurationPath) {
+    throw new Error("--agents-byok-config is required")
+  }
+
+  // Capture the catalogue and referenced secrets before the supervised server
+  // child is forked. The payload crosses the existing one-shot parent/child IPC
+  // handshake; only the scrubbed environment is inherited by subprocesses.
+  delete args["agents-byok-config"]
+  const byokBootstrap = await consumeByokBootstrapFile(byokConfigurationPath)
+  args["agent-host-byok-config"] = JSON.stringify(byokBootstrap)
 
   if (shouldSpawnCliProcess(args)) {
     logger.debug("Found VS Code arguments; spawning VS Code CLI")

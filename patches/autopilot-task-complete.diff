@@ -38,15 +38,15 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotAgentSession.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotAgentSession.ts
-@@ -30,6 +30,7 @@ import { CopilotCliConfigKey, copilotCli
+@@ -30,6 +30,7 @@ import { CopilotCliConfigKey, applyModel
  import type { ChatInputRequestWithPlanReview, IAgentHostPlanReviewAction } from '../../common/agentHostPlanReview.js';
  import { gitHubMcpServerUrl } from '../../common/githubEndpoints.js';
  import { AgentHostSandboxConfigKey, sandboxConfigSchema } from '../../common/sandboxConfigSchema.js';
 +import { AUTOPILOT_CONTINUATION_MESSAGE } from '../../common/autopilot.js';
- import { AgentHostGlobalAutoApproveEnabledConfigKey, AgentHostAutoReplyEnabledConfigKey, platformRootSchema, platformSessionSchema } from '../../common/agentHostSchema.js';
+ import { AgentHostGlobalAutoApproveEnabledConfigKey, AgentHostAutoReplyEnabledConfigKey, AgentHostDisableRepoInfoTelemetryConfigKey, platformRootSchema, platformSessionSchema } from '../../common/agentHostSchema.js';
  import { AgentSession, AgentSignal, AuthenticateParams, IMcpNotification, IRestoredSubagentSession, subagentChatTitle } from '../../common/agentService.js';
- import { stripRedundantCdPrefix } from '../../common/commandLineHelpers.js';
-@@ -436,6 +437,8 @@ interface IMcpLifecycleLogInfo {
+ import { META_DIFF_BASE_BRANCH } from '../../common/agentHostGitService.js';
+@@ -457,6 +458,8 @@ interface IMcpLifecycleLogInfo {
  class CopilotTurn {
  
  	private _state: CopilotTurnState = 'pending';
@@ -55,7 +55,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  	private readonly _stopWatch = StopWatch.create(false);
  
  	/**
-@@ -485,6 +488,8 @@ class CopilotTurn {
+@@ -511,6 +514,8 @@ class CopilotTurn {
  	get state(): CopilotTurnState { return this._state; }
  	get isPending(): boolean { return this._state === 'pending'; }
  	get isRunning(): boolean { return this._state === 'running'; }
@@ -64,7 +64,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  	get duration(): number { return Math.max(0, this._stopWatch.elapsed()); }
  
  	/** Transition `pending → running` on the first SDK event. No-op once running/finished. */
-@@ -496,6 +501,9 @@ class CopilotTurn {
+@@ -522,6 +527,9 @@ class CopilotTurn {
  
  	markCompleted(): void { this._state = 'completed'; }
  	markAborted(): void { this._state = 'aborted'; }
@@ -74,7 +74,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  }
  
  /**
-@@ -1626,6 +1634,23 @@ export class CopilotAgentSession extends
+@@ -1867,6 +1875,23 @@ export class CopilotAgentSession extends
  		return this._configurationService.getEffectiveValue(this._storageUri.toString(), platformSessionSchema, SessionConfigKey.Mode) === 'autopilot';
  	}
  
@@ -98,7 +98,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  	/**
  	 * Whether VS Code's auto-reply setting is enabled in the root config.
  	 */
-@@ -2904,6 +2929,11 @@ export class CopilotAgentSession extends
+@@ -3228,6 +3253,11 @@ export class CopilotAgentSession extends
  			if (e.data.source && e.data.source.toLowerCase() !== 'user') {
  				return;
  			}
@@ -110,7 +110,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  			// First SDK event for the loop: promote the turn out of `pending`.
  			this._currentTurn?.markRunning();
  			const steering = this._takeMatchingPendingSteering(e.data.content);
-@@ -3156,6 +3186,9 @@ export class CopilotAgentSession extends
+@@ -3492,6 +3522,9 @@ export class CopilotAgentSession extends
  			const toolOutput = e.data.error?.message ?? e.data.result?.content;
  
  			if (isTaskCompleteTool(tracked.toolName)) {
@@ -120,7 +120,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  				const summary = getTaskCompleteMarkdown(tracked.parameters, toolOutput);
  				if (summary) {
  					this._emitAction({
-@@ -3248,6 +3281,12 @@ export class CopilotAgentSession extends
+@@ -3611,6 +3644,12 @@ export class CopilotAgentSession extends
  				}
  				return;
  			}
@@ -133,17 +133,17 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  			// Only a `running` turn is completed by a normal idle. A `pending`
  			// turn here means the SDK went idle before emitting any event for it
  			// (a degenerate no-op send); complete it defensively so the session
-@@ -3937,6 +3976,9 @@ export class CopilotAgentSession extends
+@@ -4308,6 +4347,9 @@ export class CopilotAgentSession extends
  		const sessionId = this.sessionId;
  
  		this._register(wrapper.onUserMessage(e => {
 +			if (this._currentTurn?.autopilotContinuationPending && e.data.content === AUTOPILOT_CONTINUATION_MESSAGE) {
 +				return;
 +			}
- 			// Skip SDK-injected messages (matches guard on this event above).
- 			if (e.data.source && e.data.source.toLowerCase() !== 'user') {
+ 			// Skip subagent and SDK-injected messages (matches guard on this event above).
+ 			if (e.agentId || (e.data.source && e.data.source.toLowerCase() !== 'user')) {
  				return;
-@@ -4082,6 +4124,9 @@ export class CopilotAgentSession extends
+@@ -4461,6 +4503,9 @@ export class CopilotAgentSession extends
  
  		this._register(wrapper.onUserMessage(e => {
  			this._logService.trace(`[Copilot:${sessionId}] User message: ${e.data.content.length} chars, ${e.data.attachments?.length ?? 0} attachments`);
@@ -153,27 +153,27 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/co
  			// Restricted `conversation.messageText` (source=user): the raw user prompt text. Emit only
  			// for genuine human prompts on the main agent — skip subagent turns (driven by the parent)
  			// and SDK-injected synthetic messages (skill/harness injections carry a non-`user` source,
-@@ -4096,6 +4141,7 @@ export class CopilotAgentSession extends
+@@ -4475,6 +4520,7 @@ export class CopilotAgentSession extends
  		}));
  
  		this._register(wrapper.onTurnStart(e => {
 +			this._currentTurn?.clearAutopilotContinuationPending();
  			this._currentTurn?.markRunning();
  			this._logService.trace(`[Copilot:${sessionId}] Turn started: ${e.data.turnId}`);
- 		}));
+ 			if (!e.agentId) {
 Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copilotAgentSession.test.ts
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/test/node/copilotAgentSession.test.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copilotAgentSession.test.ts
-@@ -41,6 +41,7 @@ import { SessionConfigKey } from '../../
- import { AgentHostAutoReplyEnabledConfigKey, AgentHostGlobalAutoApproveEnabledConfigKey } from '../../common/agentHostSchema.js';
+@@ -46,6 +46,7 @@ import { SessionConfigKey } from '../../
+ import { AgentHostAutoReplyEnabledConfigKey, AgentHostDisableRepoInfoTelemetryConfigKey, AgentHostGlobalAutoApproveEnabledConfigKey } from '../../common/agentHostSchema.js';
  import { CopilotCliConfigKey } from '../../common/copilotCliConfig.js';
  import { AgentHostSandboxConfigKey, AgentHostSandboxKey } from '../../common/sandboxConfigSchema.js';
 +import { AUTOPILOT_CONTINUATION_MESSAGE } from '../../common/autopilot.js';
  import { AgentSandboxEnabledValue } from '../../../sandbox/common/settings.js';
- import { createSessionDataService, createZeroDiffComputeService } from '../common/sessionTestHelpers.js';
+ import { createNoopGitService, createSessionDataService, createZeroDiffComputeService, TestSessionDatabase } from '../common/sessionTestHelpers.js';
  import { OtelData } from '../../common/otlp/otlpLogEmitter.js';
-@@ -3185,6 +3186,79 @@ suite('CopilotAgentSession', () => {
+@@ -3878,6 +3879,79 @@ suite('CopilotAgentSession', () => {
  			assert.ok(isAction(signals[0], ActionType.ChatTurnComplete));
  		});
  
