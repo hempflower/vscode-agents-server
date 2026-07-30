@@ -1,7 +1,7 @@
 Enable VS Code Web Agents with a server-managed Agent Host and environment BYOK
 
-1. Bundle and serve the Sessions web application as code-server's primary UI,
-   while keeping the regular workbench available under `/editor/`.
+1. Bundle and serve the Sessions web application as code-server's only public
+   workbench; do not expose the regular editor route.
 2. Start and supervise one Agent Host from the VS Code server process, and
    expose its protocol and filesystem channels through the remote connection.
 3. Add environment-backed OpenAI and Anthropic model adapters, including
@@ -2752,56 +2752,33 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/server/node/webClientServer.ts
 +++ vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
-@@ -145,8 +145,16 @@ export class WebClientServer {
+@@ -145,8 +145,12 @@ export class WebClientServer {
  			if (pathname.startsWith(STATIC_PATH) && pathname.charCodeAt(STATIC_PATH.length) === CharCode.Slash) {
  				return this._handleStatic(req, res, pathname.substring(STATIC_PATH.length));
  			}
--			if (pathname === '/') {
--				return this._handleRoot(req, res, parsedUrl);
 +			if (pathname === '/agents' || pathname === '/agents/') {
 +				res.writeHead(302, { Location: `${pathname.endsWith('/') ? '../' : './'}${parsedUrl.search ?? ''}` });
 +				return void res.end();
 +			}
-+			if (pathname === '/editor') {
-+				res.writeHead(302, { Location: `./editor/${parsedUrl.search ?? ''}` });
-+				return void res.end();
-+			}
-+			if (pathname === '/' || pathname === '/editor/') {
-+				return this._handleWorkbench(req, res, parsedUrl, pathname === '/', pathname === '/editor/');
+ 			if (pathname === '/') {
+-				return this._handleRoot(req, res, parsedUrl);
++				return this._handleAgentsWorkbench(req, res, parsedUrl);
  			}
  			if (pathname === CALLBACK_PATH) {
  				// callback support
-@@ -256,9 +264,9 @@ export class WebClientServer {
+@@ -256,9 +260,9 @@ export class WebClientServer {
  	}
  
  	/**
 -	 * Handle HTTP requests for /
-+	 * Handle HTTP requests for the editor or Agents workbench.
++	 * Handle HTTP requests for the Agents workbench.
  	 */
 -	private async _handleRoot(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl: url.UrlWithParsedQuery): Promise<void> {
-+	private async _handleWorkbench(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl: url.UrlWithParsedQuery, isSessionsWindow: boolean, isNestedWorkbench: boolean): Promise<void> {
++	private async _handleAgentsWorkbench(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl: url.UrlWithParsedQuery): Promise<void> {
  
  		const getFirstHeader = (headerName: string) => {
  			const val = req.headers[headerName];
-@@ -267,7 +275,7 @@ export class WebClientServer {
- 
- 		// Prefix routes with basePath for clients
- 		const rootBase = relativeRoot(getOriginalUrl(req))
--		const vscodeBase = relativePath(getOriginalUrl(req))
-+		const vscodeBase = isNestedWorkbench ? '..' : relativePath(getOriginalUrl(req))
- 		const basePath = vscodeBase || getFirstHeader('x-forwarded-prefix') || this._basePath;
- 
- 		const queryConnectionToken = parsedUrl.query[connectionTokenQueryName];
-@@ -290,7 +298,7 @@ export class WebClientServer {
- 					newQuery[key] = parsedUrl.query[key];
- 				}
- 			}
--			const newLocation = url.format({ pathname: basePath, query: newQuery });
-+			const newLocation = url.format({ pathname: isNestedWorkbench ? './' : basePath, query: newQuery });
- 			responseHeaders['Location'] = newLocation;
- 
- 			res.writeHead(302, responseHeaders);
-@@ -367,8 +375,11 @@ export class WebClientServer {
+@@ -367,8 +371,11 @@ export class WebClientServer {
  		}
  
  		const appName = this._environmentService.args['app-name'];
@@ -2813,11 +2790,11 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
  			nameShort: appName,
  			nameLong: appName,
  			rootEndpoint: rootBase,
-@@ -397,6 +408,11 @@ export class WebClientServer {
+@@ -397,6 +404,11 @@ export class WebClientServer {
  		const workbenchWebConfiguration = {
  			remoteAuthority,
  			serverBasePath: basePath,
-+			isSessionsWindow,
++			isSessionsWindow: true,
 +			configurationDefaults: agentHostWebEnabled ? {
 +				'chat.agentHost.enabled': true,
 +				'chat.agentHost.byokModels.enabled': true,

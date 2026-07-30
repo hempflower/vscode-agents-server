@@ -20,18 +20,6 @@ const routes = {
     /[a-z]+-[0-9a-z]+\/static\//,
     /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
   ],
-  "/editor/": [
-    /\.\.\/manifest.json/,
-    /\.\.\/_static\//,
-    /\.\.\/[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/[a-z]+-[0-9a-z]+\/static\//,
-  ],
-  "/vscode/editor/": [
-    /\.\.\/manifest.json/,
-    /\.\.\/\.\.\/_static\//,
-    /\.\.\/[a-z]+-[0-9a-z]+\/static\//,
-    /http:\/\/localhost:[0-9]+(?:\/[0-9]+\/ide)?\/vscode\/[a-z]+-[0-9a-z]+\/static\//,
-  ],
 }
 
 describe("VS Code Routes", ["--disable-workspace-trust"], {}, async () => {
@@ -84,12 +72,12 @@ describe(
   },
 )
 
-describe("VS Code Agents route disabled", ["--disable-workspace-trust", "--disable-agents"], {}, async () => {
-  test("should return 404 for Agents routes while keeping the editor available", async ({ codeServer }) => {
+describe("VS Code editor route disabled", ["--disable-workspace-trust"], {}, async () => {
+  test("should not expose editor routes", async ({ codeServer }) => {
     const address = await codeServer.address()
-    expect((await fetch(`${address}/`)).status).toBe(404)
-    expect((await fetch(`${address}/agents/`)).status).toBe(404)
-    expect((await fetch(`${address}/editor/`)).status).toBe(200)
+    expect((await fetch(`${address}/editor`)).status).toBe(404)
+    expect((await fetch(`${address}/editor/`)).status).toBe(404)
+    expect((await fetch(`${address}/vscode/editor/`)).status).toBe(404)
   })
 })
 

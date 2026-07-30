@@ -52,7 +52,6 @@ export interface UserProvidedCodeArgs {
   "disable-workspace-trust"?: boolean
   "disable-getting-started-override"?: boolean
   "disable-proxy"?: boolean
-  "disable-agents"?: boolean
   "reconnection-grace-time"?: string
   "session-socket"?: string
   "cookie-suffix"?: string
@@ -202,10 +201,6 @@ export const options: Options<Required<UserProvidedArgs>> = {
   "disable-proxy": {
     type: "boolean",
     description: "Disable domain and path proxy routes.",
-  },
-  "disable-agents": {
-    type: "boolean",
-    description: "Disable the browser Agents window and server-side Agent Host.",
   },
   "agents-byok-config": {
     type: "string",

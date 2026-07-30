@@ -75,7 +75,7 @@ async function loadVSCode(req: express.Request): Promise<IVSCodeServerAPI> {
   const mod = (await eval(`import("${modPath}")`)) as VSCodeModule
   const serverModule = await mod.loadCodeWithNls()
   let agentHostPath: string | undefined
-  if (os.platform() === "linux" && !req.args["disable-agents"]) {
+  if (os.platform() === "linux") {
     const instanceHash = crypto.createHash("sha256").update(req.args["user-data-dir"]).digest("hex").slice(0, 16)
     const runtimeRoot = process.env.XDG_RUNTIME_DIR || os.tmpdir()
     const agentHostDirectory = path.join(runtimeRoot, `code-server-${process.getuid?.() ?? "user"}`, instanceHash)
@@ -171,13 +171,14 @@ export const ensureVSCodeLoaded = async (
   return next()
 }
 
-router.get(["/", "/editor/", "/agents", "/agents/"], async (req, res, next) => {
+// This distribution exposes only the dedicated Agents window.  Keep the
+// editor route out of the catch-all VS Code handler as well, including when
+// this router is mounted below a reverse-proxy prefix.
+router.all(["/editor", "/editor/"], (_req, res) => res.sendStatus(404))
+
+router.get(["/", "/agents", "/agents/"], async (req, res, next) => {
   const requestedPath = new URL(req.originalUrl, "http://localhost").pathname
   const currentRoute = normalize(requestedPath, requestedPath.endsWith("/")) || "/"
-  const isAgentsRoute = req.path === "/" || req.path === "/agents" || req.path === "/agents/"
-  if (isAgentsRoute && req.args["disable-agents"]) {
-    return res.sendStatus(404)
-  }
   const isAuthenticated = await authenticated(req)
   const NO_FOLDER_OR_WORKSPACE_QUERY = !req.query.folder && !req.query.workspace
   // Ew means the workspace was closed so clear the last folder/workspace.
@@ -305,12 +306,7 @@ router.post("/mint-key", async (req, res) => {
   res.end(key)
 })
 
-router.all(/^\/(?:agents\/?)?$/, ensureAuthenticated, (req, res, next) => {
-  if (req.args["disable-agents"]) {
-    return res.sendStatus(404)
-  }
-  return next()
-})
+router.all(/^\/(?:agents\/?)?$/, ensureAuthenticated)
 
 router.all(/.*/, ensureAuthenticated, ensureVSCodeLoaded, async (req, res) => {
   vscodeServer!.handleRequest(req, res)

@@ -2,13 +2,10 @@
 
 On Linux, code-server starts and supervises a server-side Agent Host when the
 first authenticated VS Code request initializes the server. The dedicated
-Agents UI is served at `/`; the normal editor remains available at `/editor/`.
-When code-server is mounted below a reverse-proxy path, use that path itself for
-Agents (for example `/vscode/`) and append `/editor/` for the normal workbench.
-The legacy `/agents/` route redirects to the Agents root.
-
-Pass `--disable-agents` to disable both the route and the Agent Host. The route
-returns `404` while disabled.
+Agents UI is served at `/`. When code-server is mounted below a reverse-proxy
+path, use that path itself for Agents (for example `/vscode/`). The legacy
+`/agents/` route redirects to the Agents root. The normal editor route is not
+exposed by this Agents-only distribution.
 
 ## BYOK configuration
 
