@@ -29,9 +29,7 @@ async function entry(): Promise<void> {
   // handshake; only the scrubbed environment is inherited by subprocesses.
   const byokConfigurationPath = args["agents-byok-config"]
   delete args["agents-byok-config"]
-  const byokBootstrap = byokConfigurationPath
-    ? await consumeByokBootstrapFile(byokConfigurationPath)
-    : undefined
+  const byokBootstrap = byokConfigurationPath ? await consumeByokBootstrapFile(byokConfigurationPath) : undefined
   if (byokBootstrap) {
     args["agent-host-byok-config"] = JSON.stringify(byokBootstrap)
   }
