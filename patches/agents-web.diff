@@ -1466,7 +1466,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/environmen
 +		const bootstrap = JSON.parse(value) as IEnvironmentByokBootstrap;
 +		const configuration = bootstrap.configuration;
 +		if (!configuration || configuration.error || configuration.version !== 1 || !Array.isArray(configuration.providers)) {
-+			throw new Error('Invalid CODE_SERVER_AGENTS_BYOK_CONFIG');
++			throw new Error('Invalid Agent Host BYOK configuration');
 +		}
 +		const secrets = bootstrap.secrets ?? {};
 +		const providers = new Map<string, IResolvedEnvironmentByokProvider>();

@@ -1,4 +1,4 @@
-export const byokConfigurationEnvironmentVariable = "CODE_SERVER_AGENTS_BYOK_CONFIG"
+import { promises as fs } from "fs"
 
 interface ByokProviderReference {
   apiKeyEnv?: unknown
@@ -13,19 +13,10 @@ export interface ByokBootstrapPayload {
   secrets: Record<string, string>
 }
 
-/**
- * Captures BYOK keys for the Agent Host, then removes them from the generic
- * process environment before VS Code can spawn extension or tool processes.
- */
-export function consumeByokBootstrapEnvironment(
-  environment: NodeJS.ProcessEnv = process.env,
-): ByokBootstrapPayload | undefined {
-  const rawConfiguration = environment[byokConfigurationEnvironmentVariable]
-  delete environment[byokConfigurationEnvironmentVariable]
-  if (!rawConfiguration) {
-    return undefined
-  }
-
+function consumeByokBootstrapConfiguration(
+  rawConfiguration: string,
+  environment: NodeJS.ProcessEnv,
+): ByokBootstrapPayload {
   let configuration: ByokConfigurationShape
   try {
     configuration = JSON.parse(rawConfiguration) as ByokConfigurationShape
@@ -48,4 +39,16 @@ export function consumeByokBootstrapEnvironment(
   }
 
   return { configuration, secrets }
+}
+
+/**
+ * Loads a BYOK catalogue from a file and captures its referenced keys before
+ * VS Code can spawn extension or tool processes.
+ */
+export async function consumeByokBootstrapFile(
+  configurationPath: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<ByokBootstrapPayload> {
+  const rawConfiguration = await fs.readFile(configurationPath, "utf8")
+  return consumeByokBootstrapConfiguration(rawConfiguration, environment)
 }

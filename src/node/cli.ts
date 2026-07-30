@@ -69,6 +69,7 @@ export interface UserProvidedCodeArgs {
  */
 export interface UserProvidedArgs extends UserProvidedCodeArgs {
   config?: string
+  "agents-byok-config"?: string
   auth?: AuthType
   password?: string
   "hashed-password"?: string
@@ -205,6 +206,11 @@ export const options: Options<Required<UserProvidedArgs>> = {
   "disable-agents": {
     type: "boolean",
     description: "Disable the browser Agents window and server-side Agent Host.",
+  },
+  "agents-byok-config": {
+    type: "string",
+    path: true,
+    description: "Path to the JSON catalogue for server-side Agent Host BYOK models.",
   },
   // --enable can be used to enable experimental features. These features
   // provide no guarantees.

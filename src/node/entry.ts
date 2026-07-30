@@ -1,5 +1,5 @@
 import { logger } from "@coder/logger"
-import { consumeByokBootstrapEnvironment } from "./agents"
+import { consumeByokBootstrapFile } from "./agents"
 import { optionDescriptions, parse, readConfigFile, setDefaults, shouldOpenInExistingInstance } from "./cli"
 import { getVersionString, getVersionJsonString } from "./constants"
 import { openInExistingInstance, runCodeServer, runCodeCli, shouldSpawnCliProcess } from "./main"
@@ -27,7 +27,11 @@ async function entry(): Promise<void> {
   // Capture the catalogue and referenced secrets before the supervised server
   // child is forked. The payload crosses the existing one-shot parent/child IPC
   // handshake; only the scrubbed environment is inherited by subprocesses.
-  const byokBootstrap = consumeByokBootstrapEnvironment()
+  const byokConfigurationPath = args["agents-byok-config"]
+  delete args["agents-byok-config"]
+  const byokBootstrap = byokConfigurationPath
+    ? await consumeByokBootstrapFile(byokConfigurationPath)
+    : undefined
   if (byokBootstrap) {
     args["agent-host-byok-config"] = JSON.stringify(byokBootstrap)
   }

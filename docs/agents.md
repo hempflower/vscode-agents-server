@@ -12,8 +12,8 @@ returns `404` while disabled.
 
 ## BYOK configuration
 
-Set `CODE_SERVER_AGENTS_BYOK_CONFIG` to a JSON catalogue. API keys are referenced
-by environment variable name and are captured at process startup:
+Pass `--agents-byok-config <path>` to load a JSON catalogue. API keys are
+referenced by environment variable name and are captured at process startup:
 
 ```json
 {
@@ -66,6 +66,16 @@ by environment variable name and are captured at process startup:
     }
   ]
 }
+```
+
+For example, save the catalogue as `/etc/code-server/byok.json`, export the
+referenced keys, and start code-server with:
+
+```shell
+export CORP_OPENAI_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+export DEEPSEEK_API_KEY="..."
+code-server --agents-byok-config /etc/code-server/byok.json
 ```
 
 Model selection IDs use `<providerId>/<modelId>`. OpenAI-compatible requests use

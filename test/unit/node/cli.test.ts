@@ -78,6 +78,7 @@ describe("parser", () => {
           ["--app-name", "custom instance name"],
           ["--welcome-text", "welcome to code"],
           ["--i18n", "path/to/custom-strings.json"],
+          ["--agents-byok-config", "path/to/byok.json"],
           "2",
 
           ["--locale", "ja"],
@@ -151,6 +152,7 @@ describe("parser", () => {
       "app-name": "custom instance name",
       "welcome-text": "welcome to code",
       i18n: path.resolve("path/to/custom-strings.json"),
+      "agents-byok-config": path.resolve("path/to/byok.json"),
       version: true,
       "bind-addr": "192.169.0.1:8080",
       "session-socket": "/tmp/override-code-server-ipc-socket",
