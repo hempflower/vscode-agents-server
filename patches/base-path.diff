@@ -235,7 +235,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
 + * wrapper or move the web server back into code-server.
 + */
 +export const getOriginalUrl = (req: http.IncomingMessage): string => {
-+	return (req as any).originalUrl || req.url
++	return (req as any).originalUrl ?? req.url ?? '/'
 +}
 Index: vscode-agents-server/lib/vscode/src/vs/base/common/product.ts
 ===================================================================
