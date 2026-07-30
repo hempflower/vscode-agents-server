@@ -1,0 +1,288 @@
+Keep Autopilot running until the root agent explicitly completes the task
+
+When an Autopilot turn becomes idle without a successful root-level
+`task_complete` call, send a hidden continuation prompt and keep the existing
+protocol turn open. Failed calls and subagent completion signals do not finish
+the root turn. Share the continuation prompt between local chat and the Agent
+Host, and exclude the synthetic message from user persistence and telemetry.
+
+Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/autopilot.ts
+===================================================================
+--- /dev/null
++++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/common/autopilot.ts
+@@ -0,0 +1,23 @@
++/*---------------------------------------------------------------------------------------------
++ *  Copyright (c) Microsoft Corporation. All rights reserved.
++ *  Licensed under the MIT License. See License.txt in the project root for license information.
++ *--------------------------------------------------------------------------------------------*/
++
++/**
++ * Synthetic prompt sent when an Autopilot turn goes idle before signalling
++ * completion. Kept in the platform layer so local chat and the Agent Host use
++ * the same continuation contract.
++ */
++export const AUTOPILOT_CONTINUATION_MESSAGE =
++	'You have not yet marked the task as complete using the task_complete tool. ' +
++	'You MUST call task_complete when done — whether the task involved code changes, answering a question, or any other interaction.\n\n' +
++	'Do NOT repeat or restate your previous response. Pick up where you left off.\n\n' +
++	'If you were planning, stop planning and start implementing. ' +
++	'You are not done until you have fully completed the task.\n\n' +
++	'IMPORTANT: Do NOT call task_complete if:\n' +
++	'- You have open questions or ambiguities — make good decisions and keep working\n' +
++	'- You encountered an error — try to resolve it or find an alternative approach\n' +
++	'- There are remaining steps — complete them first\n\n' +
++	'When you ARE done, first provide a brief text summary of what was accomplished, then call task_complete. ' +
++	'Both the summary message and the tool call are required.\n\n' +
++	'Keep working autonomously until the task is truly finished, then call task_complete.';
+Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotAgentSession.ts
+===================================================================
+--- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotAgentSession.ts
++++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/node/copilot/copilotAgentSession.ts
+@@ -30,6 +30,7 @@ import { CopilotCliConfigKey, copilotCli
+ import type { ChatInputRequestWithPlanReview, IAgentHostPlanReviewAction } from '../../common/agentHostPlanReview.js';
+ import { gitHubMcpServerUrl } from '../../common/githubEndpoints.js';
+ import { AgentHostSandboxConfigKey, sandboxConfigSchema } from '../../common/sandboxConfigSchema.js';
++import { AUTOPILOT_CONTINUATION_MESSAGE } from '../../common/autopilot.js';
+ import { AgentHostGlobalAutoApproveEnabledConfigKey, AgentHostAutoReplyEnabledConfigKey, platformRootSchema, platformSessionSchema } from '../../common/agentHostSchema.js';
+ import { AgentSession, AgentSignal, AuthenticateParams, IMcpNotification, IRestoredSubagentSession, subagentChatTitle } from '../../common/agentService.js';
+ import { stripRedundantCdPrefix } from '../../common/commandLineHelpers.js';
+@@ -436,6 +437,8 @@ interface IMcpLifecycleLogInfo {
+ class CopilotTurn {
+ 
+ 	private _state: CopilotTurnState = 'pending';
++	private _taskCompleteSignalled = false;
++	private _autopilotContinuationPending = false;
+ 	private readonly _stopWatch = StopWatch.create(false);
+ 
+ 	/**
+@@ -485,6 +488,8 @@ class CopilotTurn {
+ 	get state(): CopilotTurnState { return this._state; }
+ 	get isPending(): boolean { return this._state === 'pending'; }
+ 	get isRunning(): boolean { return this._state === 'running'; }
++	get taskCompleteSignalled(): boolean { return this._taskCompleteSignalled; }
++	get autopilotContinuationPending(): boolean { return this._autopilotContinuationPending; }
+ 	get duration(): number { return Math.max(0, this._stopWatch.elapsed()); }
+ 
+ 	/** Transition `pending → running` on the first SDK event. No-op once running/finished. */
+@@ -496,6 +501,9 @@ class CopilotTurn {
+ 
+ 	markCompleted(): void { this._state = 'completed'; }
+ 	markAborted(): void { this._state = 'aborted'; }
++	markTaskCompleteSignalled(): void { this._taskCompleteSignalled = true; }
++	markAutopilotContinuationPending(): void { this._autopilotContinuationPending = true; }
++	clearAutopilotContinuationPending(): void { this._autopilotContinuationPending = false; }
+ }
+ 
+ /**
+@@ -1626,6 +1634,23 @@ export class CopilotAgentSession extends
+ 		return this._configurationService.getEffectiveValue(this._storageUri.toString(), platformSessionSchema, SessionConfigKey.Mode) === 'autopilot';
+ 	}
+ 
++	private _continueAutopilotTurn(turn: CopilotTurn): void {
++		turn.markAutopilotContinuationPending();
++		this._logService.info(`[Copilot:${this.sessionId}] Autopilot turn ${turn.id} went idle without task_complete; continuing`);
++		void this._wrapper.session.send({
++			prompt: AUTOPILOT_CONTINUATION_MESSAGE,
++			agentMode: 'autopilot',
++			displayPrompt: '',
++		}).catch(error => {
++			if (this._currentTurn !== turn) {
++				return;
++			}
++			turn.clearAutopilotContinuationPending();
++			this._logService.error(error, `[Copilot:${this.sessionId}] Failed to continue Autopilot turn ${turn.id}`);
++			this._completeActiveTurn();
++		});
++	}
++
+ 	/**
+ 	 * Whether VS Code's auto-reply setting is enabled in the root config.
+ 	 */
+@@ -2904,6 +2929,11 @@ export class CopilotAgentSession extends
+ 			if (e.data.source && e.data.source.toLowerCase() !== 'user') {
+ 				return;
+ 			}
++			// The host-generated Autopilot continuation belongs to the existing
++			// protocol turn. Do not persist its event as the user's turn boundary.
++			if (this._currentTurn?.autopilotContinuationPending && e.data.content === AUTOPILOT_CONTINUATION_MESSAGE) {
++				return;
++			}
+ 			// First SDK event for the loop: promote the turn out of `pending`.
+ 			this._currentTurn?.markRunning();
+ 			const steering = this._takeMatchingPendingSteering(e.data.content);
+@@ -3156,6 +3186,9 @@ export class CopilotAgentSession extends
+ 			const toolOutput = e.data.error?.message ?? e.data.result?.content;
+ 
+ 			if (isTaskCompleteTool(tracked.toolName)) {
++				if (!parentToolCallId && e.data.success) {
++					this._currentTurn?.markTaskCompleteSignalled();
++				}
+ 				const summary = getTaskCompleteMarkdown(tracked.parameters, toolOutput);
+ 				if (summary) {
+ 					this._emitAction({
+@@ -3248,6 +3281,12 @@ export class CopilotAgentSession extends
+ 				}
+ 				return;
+ 			}
++			if (turn.isRunning && this._isAutopilotMode() && !turn.taskCompleteSignalled) {
++				if (!turn.autopilotContinuationPending) {
++					this._continueAutopilotTurn(turn);
++				}
++				return;
++			}
+ 			// Only a `running` turn is completed by a normal idle. A `pending`
+ 			// turn here means the SDK went idle before emitting any event for it
+ 			// (a degenerate no-op send); complete it defensively so the session
+@@ -3937,6 +3976,9 @@ export class CopilotAgentSession extends
+ 		const sessionId = this.sessionId;
+ 
+ 		this._register(wrapper.onUserMessage(e => {
++			if (this._currentTurn?.autopilotContinuationPending && e.data.content === AUTOPILOT_CONTINUATION_MESSAGE) {
++				return;
++			}
+ 			// Skip SDK-injected messages (matches guard on this event above).
+ 			if (e.data.source && e.data.source.toLowerCase() !== 'user') {
+ 				return;
+@@ -4082,6 +4124,9 @@ export class CopilotAgentSession extends
+ 
+ 		this._register(wrapper.onUserMessage(e => {
+ 			this._logService.trace(`[Copilot:${sessionId}] User message: ${e.data.content.length} chars, ${e.data.attachments?.length ?? 0} attachments`);
++			if (this._currentTurn?.autopilotContinuationPending && e.data.content === AUTOPILOT_CONTINUATION_MESSAGE) {
++				return;
++			}
+ 			// Restricted `conversation.messageText` (source=user): the raw user prompt text. Emit only
+ 			// for genuine human prompts on the main agent — skip subagent turns (driven by the parent)
+ 			// and SDK-injected synthetic messages (skill/harness injections carry a non-`user` source,
+@@ -4096,6 +4141,7 @@ export class CopilotAgentSession extends
+ 		}));
+ 
+ 		this._register(wrapper.onTurnStart(e => {
++			this._currentTurn?.clearAutopilotContinuationPending();
+ 			this._currentTurn?.markRunning();
+ 			this._logService.trace(`[Copilot:${sessionId}] Turn started: ${e.data.turnId}`);
+ 		}));
+Index: vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copilotAgentSession.test.ts
+===================================================================
+--- vscode-agents-server.orig/lib/vscode/src/vs/platform/agentHost/test/node/copilotAgentSession.test.ts
++++ vscode-agents-server/lib/vscode/src/vs/platform/agentHost/test/node/copilotAgentSession.test.ts
+@@ -41,6 +41,7 @@ import { SessionConfigKey } from '../../
+ import { AgentHostAutoReplyEnabledConfigKey, AgentHostGlobalAutoApproveEnabledConfigKey } from '../../common/agentHostSchema.js';
+ import { CopilotCliConfigKey } from '../../common/copilotCliConfig.js';
+ import { AgentHostSandboxConfigKey, AgentHostSandboxKey } from '../../common/sandboxConfigSchema.js';
++import { AUTOPILOT_CONTINUATION_MESSAGE } from '../../common/autopilot.js';
+ import { AgentSandboxEnabledValue } from '../../../sandbox/common/settings.js';
+ import { createSessionDataService, createZeroDiffComputeService } from '../common/sessionTestHelpers.js';
+ import { OtelData } from '../../common/otlp/otlpLogEmitter.js';
+@@ -3185,6 +3186,79 @@ suite('CopilotAgentSession', () => {
+ 			assert.ok(isAction(signals[0], ActionType.ChatTurnComplete));
+ 		});
+ 
++		test('Autopilot continues a running turn that goes idle without task_complete', async () => {
++			const { session, mockSession, signals } = await createAgentSession(disposables, {
++				configValues: { [SessionConfigKey.Mode]: 'autopilot' },
++			});
++			session.resetTurnState('turn-autopilot');
++			mockSession.fire('assistant.turn_start', { turnId: 'sdk-0' } as SessionEventPayload<'assistant.turn_start'>['data']);
++
++			mockSession.fire('session.idle', {} as SessionEventPayload<'session.idle'>['data']);
++			await timeout(0);
++
++			assert.deepStrictEqual(mockSession.sendRequests, [{
++				prompt: AUTOPILOT_CONTINUATION_MESSAGE,
++				agentMode: 'autopilot',
++				displayPrompt: '',
++			}]);
++			assert.strictEqual(getActions(signals).filter(a => a.type === ActionType.ChatTurnComplete).length, 0);
++
++			// Repeated idle notifications for the same SDK loop must not enqueue
++			// duplicate continuation prompts.
++			mockSession.fire('session.idle', {} as SessionEventPayload<'session.idle'>['data']);
++			await timeout(0);
++			assert.strictEqual(mockSession.sendRequests.length, 1);
++		});
++
++		test('Autopilot completes after a successful root task_complete call', async () => {
++			const { session, mockSession, signals } = await createAgentSession(disposables, {
++				configValues: { [SessionConfigKey.Mode]: 'autopilot' },
++			});
++			session.resetTurnState('turn-autopilot-complete');
++			mockSession.fire('assistant.turn_start', { turnId: 'sdk-0' } as SessionEventPayload<'assistant.turn_start'>['data']);
++			mockSession.fire('tool.execution_start', {
++				toolCallId: 'tc-autopilot-complete',
++				toolName: 'task_complete',
++				arguments: { summary: 'Done.' },
++			} as SessionEventPayload<'tool.execution_start'>['data']);
++			mockSession.fire('tool.execution_complete', {
++				toolCallId: 'tc-autopilot-complete',
++				success: true,
++				result: { content: 'Done.' },
++			} as SessionEventPayload<'tool.execution_complete'>['data']);
++
++			mockSession.fire('session.idle', {} as SessionEventPayload<'session.idle'>['data']);
++
++			assert.strictEqual(mockSession.sendRequests.length, 0);
++			const completions = getActions(signals).filter(a => a.type === ActionType.ChatTurnComplete);
++			assert.strictEqual(completions.length, 1);
++			assert.strictEqual((completions[0] as ChatTurnCompleteAction).turnId, 'turn-autopilot-complete');
++		});
++
++		test('Autopilot continues after a failed task_complete call', async () => {
++			const { session, mockSession, signals } = await createAgentSession(disposables, {
++				configValues: { [SessionConfigKey.Mode]: 'autopilot' },
++			});
++			session.resetTurnState('turn-autopilot-failed-complete');
++			mockSession.fire('assistant.turn_start', { turnId: 'sdk-0' } as SessionEventPayload<'assistant.turn_start'>['data']);
++			mockSession.fire('tool.execution_start', {
++				toolCallId: 'tc-autopilot-failed',
++				toolName: 'task_complete',
++				arguments: { summary: 'Done.' },
++			} as SessionEventPayload<'tool.execution_start'>['data']);
++			mockSession.fire('tool.execution_complete', {
++				toolCallId: 'tc-autopilot-failed',
++				success: false,
++				error: { message: 'Rejected' },
++			} as SessionEventPayload<'tool.execution_complete'>['data']);
++
++			mockSession.fire('session.idle', {} as SessionEventPayload<'session.idle'>['data']);
++			await timeout(0);
++
++			assert.strictEqual(mockSession.sendRequests.length, 1);
++			assert.strictEqual(getActions(signals).filter(a => a.type === ActionType.ChatTurnComplete).length, 0);
++		});
++
+ 		test('idle event without an active turn is ignored', async () => {
+ 			const { mockSession, signals } = await createAgentSession(disposables);
+ 			mockSession.fire('session.idle', {} as SessionEventPayload<'session.idle'>['data']);
+Index: vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/common/tools/builtinTools/taskCompleteTool.ts
+===================================================================
+--- vscode-agents-server.orig/lib/vscode/src/vs/workbench/contrib/chat/common/tools/builtinTools/taskCompleteTool.ts
++++ vscode-agents-server/lib/vscode/src/vs/workbench/contrib/chat/common/tools/builtinTools/taskCompleteTool.ts
+@@ -4,27 +4,11 @@
+  *--------------------------------------------------------------------------------------------*/
+ 
+ import { CancellationToken } from '../../../../../../base/common/cancellation.js';
++export { AUTOPILOT_CONTINUATION_MESSAGE } from '../../../../../../platform/agentHost/common/autopilot.js';
+ import { IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, ToolDataSource, ToolInvocationPresentation, ToolProgress, CountTokensCallback } from '../languageModelToolsService.js';
+ 
+ export const TaskCompleteToolId = 'task_complete';
+ 
+-/**
+- * Message sent to the agent when the session goes idle without task completion.
+- */
+-export const AUTOPILOT_CONTINUATION_MESSAGE =
+-	'You have not yet marked the task as complete using the task_complete tool. ' +
+-	'You MUST call task_complete when done — whether the task involved code changes, answering a question, or any other interaction.\n\n' +
+-	'Do NOT repeat or restate your previous response. Pick up where you left off.\n\n' +
+-	'If you were planning, stop planning and start implementing. ' +
+-	'You are not done until you have fully completed the task.\n\n' +
+-	'IMPORTANT: Do NOT call task_complete if:\n' +
+-	'- You have open questions or ambiguities — make good decisions and keep working\n' +
+-	'- You encountered an error — try to resolve it or find an alternative approach\n' +
+-	'- There are remaining steps — complete them first\n\n' +
+-	'When you ARE done, first provide a brief text summary of what was accomplished, then call task_complete. ' +
+-	'Both the summary message and the tool call are required.\n\n' +
+-	'Keep working autonomously until the task is truly finished, then call task_complete.';
+-
+ export const TaskCompleteToolData: IToolData = {
+ 	id: TaskCompleteToolId,
+ 	displayName: 'Task Complete',
