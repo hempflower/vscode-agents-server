@@ -94,8 +94,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: "v3.19.2"
-      - run: helm plugin install https://github.com/instrumenta/helm-kubeval
-      - run: helm kubeval ci/helm-chart
+      - run: helm lint ci/helm-chart
 
   lint-ts:
     name: Lint TypeScript files

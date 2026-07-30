@@ -21,45 +21,16 @@ function should-use-rpm() {
   [ "${lines[-6]}" = "rpm package has been installed." ]
 }
 
-function should-fallback-npm() {
-  YARN_PATH=true DISTRO=$1 ARCH=$2 OS=linux run "$SCRIPT" --dry-run
-  [ "$status" -eq 0 ]
-  [ "${lines[1]}" = "No standalone releases for $2." ]
-  [ "${lines[2]}" = "Falling back to installation from npm." ]
-  [ "${lines[3]}" = "Installing v$VERSION from npm." ]
-  [ "${lines[-6]}" = "npm package has been installed." ]
+function should-reject-arch() {
+  DISTRO=$1 ARCH=$2 OS=$3 run "$SCRIPT" --dry-run
+  [ "$status" -eq 1 ]
+  [ "${lines[1]}" = "There are no vscode-agents-server releases for $2." ]
 }
 
-function should-use-npm() {
-  YARN_PATH=true DISTRO=$1 ARCH=$2 OS=linux run "$SCRIPT" --dry-run
-  [ "$status" -eq 0 ]
-  [ "${lines[1]}" = "Installing v$VERSION from npm." ]
-  [ "${lines[-6]}" = "npm package has been installed." ]
-}
-
-function should-use-aur() {
-  DISTRO=$1 ARCH=$2 OS=linux run "$SCRIPT" --dry-run
-  [ "$status" -eq 0 ]
-  [ "${lines[1]}" = "Installing latest from the AUR." ]
-  [ "${lines[-6]}" = "AUR package has been installed." ]
-}
-
-function should-fallback-npm-brew() {
-  YARN_PATH=true BREW_PATH= OS=macos ARCH=$1 run "$SCRIPT" --dry-run
-  [ "$status" -eq 0 ]
-  [ "${lines[1]}" = "Homebrew not installed." ]
-  [ "${lines[2]}" = "Falling back to standalone installation." ]
-  [ "${lines[3]}" = "No standalone releases for $1." ]
-  [ "${lines[4]}" = "Falling back to installation from npm." ]
-  [ "${lines[5]}" = "Installing v$VERSION from npm." ]
-  [ "${lines[-6]}" = "npm package has been installed." ]
-}
-
-function should-use-brew() {
-  BREW_PATH=true OS=macos ARCH=$1 run "$SCRIPT" --dry-run
-  [ "$status" -eq 0 ]
-  [ "${lines[1]}" = "Installing latest from Homebrew." ]
-  [ "${lines[-4]}" = "Brew release has been installed." ]
+function should-reject-distro() {
+  DISTRO=$1 ARCH=$2 OS=$3 run "$SCRIPT" --dry-run
+  [ "$status" -eq 1 ]
+  [ "${lines[1]}" = "There are no vscode-agents-server builds for $1." ]
 }
 
 function should-use-standalone() {
@@ -69,14 +40,21 @@ function should-use-standalone() {
   [[ "${lines[-6]}" = "Standalone release has been installed"* ]]
 }
 
+function should-detect-standalone() {
+  DISTRO=$1 ARCH=$2 OS=$3 run "$SCRIPT" --dry-run
+  [ "$status" -eq 0 ]
+  [ "${lines[1]}" = "Installing v$VERSION of the $2 release from GitHub." ]
+  [[ "${lines[-6]}" = "Standalone release has been installed"* ]]
+}
+
 @test "$SCRIPT_NAME: usage with --help" {
   run "$SCRIPT" --help
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "Installs code-server." ]
+  [ "${lines[0]}" = "Installs vscode-agents-server." ]
   [[ "${lines[-1]}" = "More installation docs are at"* ]]
 }
 
-# These use the deb but fall back to npm for unsupported architectures.
+# These use the deb and reject unsupported architectures.
 @test "$SCRIPT_NAME: debian arm64" {
   should-use-deb "debian" "arm64"
 }
@@ -84,10 +62,10 @@ function should-use-standalone() {
   should-use-deb "debian" "amd64"
 }
 @test "$SCRIPT_NAME: debian i386" {
-  should-fallback-npm "debian" "i386"
+  should-reject-arch "debian" "i386" "linux"
 }
 
-# These use the rpm but fall back to npm for unsupported architectures.
+# These use the rpm and reject unsupported architectures.
 @test "$SCRIPT_NAME: fedora arm64" {
   should-use-rpm "fedora" "arm64"
 }
@@ -95,66 +73,50 @@ function should-use-standalone() {
   should-use-rpm "fedora" "amd64"
 }
 @test "$SCRIPT_NAME: fedora i386" {
-  should-fallback-npm "fedora" "i386"
+  should-reject-arch "fedora" "i386" "linux"
 }
 
-# These always use npm regardless of the architecture.
+# Alpine and FreeBSD do not have compatible release builds.
 @test "$SCRIPT_NAME: alpine arm64" {
-  should-use-npm "alpine" "arm64"
+  should-reject-distro "alpine" "arm64" "linux"
 }
 @test "$SCRIPT_NAME: alpine amd64" {
-  should-use-npm "alpine" "amd64"
+  should-reject-distro "alpine" "amd64" "linux"
 }
 @test "$SCRIPT_NAME: alpine i386" {
-  should-use-npm "alpine" "i386"
+  should-reject-distro "alpine" "i386" "linux"
 }
 
 @test "$SCRIPT_NAME: freebsd arm64" {
-  should-use-npm "freebsd" "arm64"
+  should-reject-distro "freebsd" "arm64" "freebsd"
 }
 @test "$SCRIPT_NAME: freebsd amd64" {
-  should-use-npm "freebsd" "amd64"
+  should-reject-distro "freebsd" "amd64" "freebsd"
 }
 @test "$SCRIPT_NAME: freebsd i386" {
-  should-use-npm "freebsd" "i386"
+  should-reject-distro "freebsd" "i386" "freebsd"
 }
 
-# Arch Linux uses AUR but falls back to npm for unsuppported architectures.
+# Arch Linux uses the standalone build.
 @test "$SCRIPT_NAME: arch arm64" {
-  should-use-aur "arch" "arm64"
+  should-detect-standalone "arch" "arm64" "linux"
 }
 @test "$SCRIPT_NAME: arch amd64" {
-  should-use-aur "arch" "amd64"
+  should-detect-standalone "arch" "amd64" "linux"
 }
 @test "$SCRIPT_NAME: arch i386" {
-  should-fallback-npm "arch" "i386"
+  should-reject-arch "arch" "i386" "linux"
 }
 
-# macOS use homebrew but falls back to standalone when brew is unavailable then
-# to npm for unsupported architectures.
-@test "$SCRIPT_NAME: macos amd64 (no brew)" {
-  should-fallback-npm-brew "amd64"
+# macOS uses the standalone build.
+@test "$SCRIPT_NAME: macos amd64" {
+  should-detect-standalone "macos" "amd64" "macos"
 }
-@test "$SCRIPT_NAME: macos arm64 (no brew)" {
-  BREW_PATH= OS=macos ARCH=arm64 run "$SCRIPT" --dry-run
-  [ "$status" -eq 0 ]
-  [ "${lines[1]}" = "Homebrew not installed." ]
-  [ "${lines[2]}" = "Falling back to standalone installation." ]
-  [ "${lines[3]}" = "Installing v$VERSION of the arm64 release from GitHub." ]
-  [[ "${lines[-6]}" = "Standalone release has been installed"* ]]
+@test "$SCRIPT_NAME: macos arm64" {
+  should-detect-standalone "macos" "arm64" "macos"
 }
-@test "$SCRIPT_NAME: macos i386 (no brew)" {
-  should-fallback-npm-brew "i386"
-}
-
-@test "$SCRIPT_NAME: macos arm64 (brew)" {
-  should-use-brew "arm64"
-}
-@test "$SCRIPT_NAME: macos amd64 (brew)" {
-  should-use-brew "amd64"
-}
-@test "$SCRIPT_NAME: macos i386 (brew)" {
-  should-use-brew "i386"
+@test "$SCRIPT_NAME: macos i386" {
+  should-reject-arch "macos" "i386" "macos"
 }
 
 # Force standalone.

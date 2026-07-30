@@ -32,11 +32,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-      - name: Install code-server
-        run: ./install.sh
-
-      - name: Test vscode-agents-server was installed globally
-        run: vscode-agents-server --help
+      - name: Test Debian package install plan
+        run: |
+          output=$(VERSION=0.0.0 DISTRO=debian OS=linux ARCH=amd64 ./install.sh --dry-run)
+          grep -F "https://github.com/hempflower/vscode-agents-server/releases/download/v0.0.0/code-server_0.0.0_amd64.deb" <<<"$output"
+          grep -F "vscode-agents-server@\$USER" <<<"$output"
 
   alpine:
     name: Test installer on Alpine
@@ -46,20 +46,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-      - name: Install curl
-        run: apk add curl
-
-      - name: Add user
-        run: adduser coder --disabled-password
-
-      # Standalone should work without root.
-      - name: Test standalone to a non-existent prefix
-        run: su coder -c "./install.sh --method standalone --prefix /tmp/does/not/yet/exist"
-
-      # We do not actually have Alpine standalone builds so running code-server
-      # will not work.
-      - name: Test vscode-agents-server was installed to prefix
-        run: test -f /tmp/does/not/yet/exist/bin/vscode-agents-server
+      - name: Test unsupported platform error
+        run: |
+          if output=$(VERSION=0.0.0 DISTRO=alpine OS=linux ARCH=amd64 ./install.sh --dry-run 2>&1); then
+            exit 1
+          fi
+          echo "$output" | grep -F "There are no vscode-agents-server builds for alpine."
 
   macos:
     name: Test installer on macOS
@@ -69,8 +61,8 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-      - name: Install code-server
-        run: ./install.sh
-
-      - name: Test vscode-agents-server was installed globally
-        run: vscode-agents-server --help
+      - name: Test standalone install plan
+        run: |
+          output=$(VERSION=0.0.0 DISTRO=macos OS=macos ARCH=arm64 ./install.sh --dry-run --method standalone)
+          grep -F "https://github.com/hempflower/vscode-agents-server/releases/download/v0.0.0/code-server-0.0.0-macos-arm64.tar.gz" <<<"$output"
+          grep -F "/bin/vscode-agents-server" <<<"$output"

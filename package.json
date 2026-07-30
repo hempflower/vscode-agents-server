@@ -90,6 +90,9 @@
   "resolutions": {
     "@types/node": "22.x"
   },
+  "overrides": {
+    "brace-expansion": "5.0.9"
+  },
   "bin": {
     "vscode-agents-server": "out/node/entry.js"
   },

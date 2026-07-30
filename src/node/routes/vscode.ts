@@ -176,6 +176,9 @@ export const ensureVSCodeLoaded = async (
 // this router is mounted below a reverse-proxy prefix.
 router.all(["/editor", "/editor/"], (_req, res) => res.sendStatus(404))
 
+// This route only checks an existing session cookie; credentials are accepted
+// and rate-limited by the login route.
+// codeql[js/missing-rate-limiting]
 router.get(["/", "/agents", "/agents/"], async (req, res, next) => {
   const requestedPath = new URL(req.originalUrl, "http://localhost").pathname
   const currentRoute = normalize(requestedPath, requestedPath.endsWith("/")) || "/"
@@ -306,6 +309,9 @@ router.post("/mint-key", async (req, res) => {
   res.end(key)
 })
 
+// This middleware only checks an existing session cookie; credentials are
+// accepted and rate-limited by the login route.
+// codeql[js/missing-rate-limiting]
 router.all(/^\/(?:agents\/?)?$/, ensureAuthenticated)
 
 router.all(/.*/, ensureAuthenticated, ensureVSCodeLoaded, async (req, res) => {
