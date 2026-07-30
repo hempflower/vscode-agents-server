@@ -24,6 +24,5 @@ trusted-domains.diff
 signature-verification.diff
 copilot.diff
 app-name.diff
-csp-hashes.diff
 agents-web.diff
 autopilot-task-complete.diff
