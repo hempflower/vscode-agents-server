@@ -52,10 +52,11 @@ describe("VS Code Routes", [], {}, async () => {
   })
 
   test("should redirect the legacy Agents route to root", async ({ codeServerPage }) => {
-    await codeServerPage.navigate("/agents/?folder=/tmp/example")
+    const folder = process.env.CODE_FOLDER_DIR
+    await codeServerPage.navigate(`/agents/?folder=${folder}`)
     const url = new URL(codeServerPage.page.url())
     expect(getMaybeProxiedPathname(url)).toBe("/")
-    expect(url.searchParams.get("folder")).toBe("/tmp/example")
+    expect(url.searchParams.get("folder")).toBe(folder)
   })
 })
 
@@ -157,7 +158,7 @@ describe("VS Code Routes with a stale workspace", [], {}, async () => {
     expect(location).toBeTruthy()
 
     const url = new URL(location as string, address)
-    expect(getMaybeProxiedPathname(url)).toBe("/")
+    expect(url.pathname).toBe("/")
     expect(url.search).toBe("?ew=true")
   })
 })
