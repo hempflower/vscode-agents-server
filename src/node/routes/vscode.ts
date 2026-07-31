@@ -12,7 +12,7 @@ import { CodeArgs, toCodeArgs } from "../cli"
 import { isDevMode, vsRootPath } from "../constants"
 import { authenticated, ensureAuthenticated, ensureOrigin, redirect, replaceTemplates } from "../http"
 import { SocketProxyProvider } from "../socket"
-import { isFile } from "../util"
+import { isDirectory, isFile } from "../util"
 import { type WebsocketRequest, Router as WsRouter } from "../wsRouter"
 
 export const router = express.Router()
@@ -192,7 +192,9 @@ router.get(["/", "/agents", "/agents/"], unauthenticatedRequestLimiter, async (r
   const requestedPath = new URL(req.originalUrl, "http://localhost").pathname
   const currentRoute = normalize(requestedPath, requestedPath.endsWith("/")) || "/"
   const isAuthenticated = await authenticated(req)
-  const NO_FOLDER_OR_WORKSPACE_QUERY = !req.query.folder && !req.query.workspace
+  const requestedFolder = typeof req.query.folder === "string" ? req.query.folder : undefined
+  const requestedWorkspace = typeof req.query.workspace === "string" ? req.query.workspace : undefined
+  const NO_FOLDER_OR_WORKSPACE_QUERY = !requestedFolder && !requestedWorkspace
   // Ew means the workspace was closed so clear the last folder/workspace.
   const FOLDER_OR_WORKSPACE_WAS_CLOSED = req.query.ew
 
@@ -209,12 +211,31 @@ router.get(["/", "/agents", "/agents/"], unauthenticatedRequestLimiter, async (r
     return next()
   }
 
+  // A stale folder/workspace can also arrive directly in the browser URL,
+  // bypassing the last-opened restoration below. Remove invalid targets before
+  // VS Code starts so its remote-workspace validator never shows a modal.
+  if (requestedFolder || requestedWorkspace) {
+    const hasRequestedFolder = requestedFolder ? await isDirectory(requestedFolder) : false
+    const hasRequestedWorkspace = requestedWorkspace ? await isFile(requestedWorkspace) : false
+    if ((requestedFolder && !hasRequestedFolder) || (requestedWorkspace && !hasRequestedWorkspace)) {
+      return redirect(req, res, currentRoute, {
+        folder: hasRequestedFolder ? requestedFolder : undefined,
+        workspace: hasRequestedWorkspace ? requestedWorkspace : undefined,
+        // Suppress last-opened restoration when every requested target was
+        // invalid. This query is persisted by the redirected request, which
+        // also clears the stale remembered workspace.
+        ew: hasRequestedFolder || hasRequestedWorkspace ? undefined : "true",
+      })
+    }
+  }
+
   if (NO_FOLDER_OR_WORKSPACE_QUERY && !FOLDER_OR_WORKSPACE_WAS_CLOSED) {
     const settings = await req.settings.read()
     const lastOpened = settings.query || {}
     // This flag disables the last opened behavior
     const IGNORE_LAST_OPENED = req.args["ignore-last-opened"]
-    const HAS_LAST_OPENED_FOLDER_OR_WORKSPACE = lastOpened.folder || lastOpened.workspace
+    const lastOpenedFolder = typeof lastOpened.folder === "string" ? lastOpened.folder : undefined
+    const lastOpenedWorkspace = typeof lastOpened.workspace === "string" ? lastOpened.workspace : undefined
     const HAS_FOLDER_OR_WORKSPACE_FROM_CLI = req.args._.length > 0
     const to = currentRoute
 
@@ -222,17 +243,29 @@ router.get(["/", "/agents", "/agents/"], unauthenticatedRequestLimiter, async (r
     let workspace = undefined
 
     // Redirect to the last folder/workspace if nothing else is opened.
-    if (HAS_LAST_OPENED_FOLDER_OR_WORKSPACE && !IGNORE_LAST_OPENED) {
-      folder = lastOpened.folder
-      workspace = lastOpened.workspace
-    } else if (HAS_FOLDER_OR_WORKSPACE_FROM_CLI) {
+    if (!IGNORE_LAST_OPENED) {
+      // Do not restore a path that has been deleted since the previous visit.
+      // Redirecting to it makes VS Code show its "Workspace does not exist"
+      // dialog on every startup.
+      if (lastOpenedFolder && (await isDirectory(lastOpenedFolder))) {
+        folder = lastOpenedFolder
+      }
+      if (lastOpenedWorkspace && (await isFile(lastOpenedWorkspace))) {
+        workspace = lastOpenedWorkspace
+      }
+    }
+
+    // If the remembered paths are stale, fall back to the path passed on the
+    // command line just as we would for a first launch.
+    if (!folder && !workspace && HAS_FOLDER_OR_WORKSPACE_FROM_CLI) {
       const lastEntry = path.resolve(req.args._[req.args._.length - 1])
       const entryIsFile = await isFile(lastEntry)
+      const entryIsDirectory = await isDirectory(lastEntry)
       const IS_WORKSPACE_FILE = entryIsFile && path.extname(lastEntry) === ".code-workspace"
 
       if (IS_WORKSPACE_FILE) {
         workspace = lastEntry
-      } else if (!entryIsFile) {
+      } else if (entryIsDirectory) {
         folder = lastEntry
       }
     }

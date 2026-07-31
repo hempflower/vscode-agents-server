@@ -144,3 +144,33 @@ describe("VS Code Routes with no workspace or folder", [], {}, async () => {
     expect(url.search).toBe("?ew=true")
   })
 })
+
+describe("VS Code Routes with a stale workspace", [], {}, async () => {
+  test("should clear an invalid folder query before loading the workbench", async ({ codeServer }) => {
+    const address = await codeServer.address()
+    const response = await fetch(`${address}/?folder=/tmp/code-server-folder-that-does-not-exist`, {
+      redirect: "manual",
+    })
+
+    expect(response.status).toBe(302)
+    const location = response.headers.get("location")
+    expect(location).toBeTruthy()
+
+    const url = new URL(location as string, address)
+    expect(getMaybeProxiedPathname(url)).toBe("/")
+    expect(url.search).toBe("?ew=true")
+  })
+})
+
+describe(
+  "VS Code Routes with a stale command-line workspace",
+  ["/tmp/code-server-folder-that-does-not-exist"],
+  {},
+  async () => {
+    test("should not pass the missing folder to VS Code", async ({ codeServer }) => {
+      const response = await fetch(await codeServer.address(), { redirect: "manual" })
+
+      expect(response.status).toBe(200)
+    })
+  },
+)
