@@ -1,0 +1,54 @@
+diff --git a/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts b/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts
+--- a/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts
++++ b/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts
+@@ -618,6 +618,13 @@ class AgentHostChatSession extends Disposable implements IChatSession {
+ 	 * flow to stream ongoing state changes into the chat UI.
+ 	 */
+ 	appendProgress(items: IChatProgress[]): void {
++		// State subscriptions and asynchronous helpers can deliver a final
++		// update after the turn's terminal state has already completed the chat
++		// response. Do not let a stale update poison the UI's progress stream.
++		if (this.isCompleteObs.get()) {
++			this._logService.trace(`[AgentHost] Ignoring ${items.length} progress item(s) after response completion`);
++			return;
++		}
+ 		const current = this.progressObs.get();
+ 		this.progressObs.set([...current, ...items], undefined);
+ 	}
+diff --git a/lib/vscode/src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts b/lib/vscode/src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts
+--- a/lib/vscode/src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts
++++ b/lib/vscode/src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts
+@@ -1024,8 +1024,16 @@ export class ChatService extends Disposable implements IChatService {
+ 				// Process only new progress items
+ 				if (lastRequest && progressArray.length > lastProgressLength) {
+ 					const newProgress = progressArray.slice(lastProgressLength);
+-					for (const progress of newProgress) {
+-						model?.acceptResponseProgress(lastRequest, progress);
++					if (lastRequest.response?.isComplete) {
++						// A contributed remote session may publish a delayed state
++						// update after it has marked the turn complete. The ChatModel
++						// correctly rejects such updates; ignore them here so one stale
++						// event cannot break all subsequent UI reconciliation.
++						this.trace('loadRemoteSession', `Ignoring ${newProgress.length} progress item(s) for a completed response in ${model.sessionResource}`);
++					} else {
++						for (const progress of newProgress) {
++							model.acceptResponseProgress(lastRequest, progress);
++						}
+ 					}
+ 					lastProgressLength = progressArray.length;
+ 				}
+diff --git a/lib/vscode/src/vs/workbench/contrib/chat/test/common/chatService/chatService.test.ts b/lib/vscode/src/vs/workbench/contrib/chat/test/common/chatService/chatService.test.ts
+--- a/lib/vscode/src/vs/workbench/contrib/chat/test/common/chatService/chatService.test.ts
++++ b/lib/vscode/src/vs/workbench/contrib/chat/test/common/chatService/chatService.test.ts
+@@ -2429,6 +2429,11 @@ suite('ChatService', () => {
+ 
+ 			assert.strictEqual(lastRequest.response?.isComplete, true, 'Response should complete when isCompleteObs transitions to true');
+ 
++			// A delayed remote progress update must not throw while reconciling the
++			// UI, nor reopen or mutate the completed response.
++			progressObs.set([{ kind: 'markdownContent', content: new MarkdownString('late progress') }], undefined);
++			assert.deepStrictEqual(lastRequest.response?.response.value, [], 'Late progress should be ignored after completion');
++
+ 			// Pending request entry should now be gone — cancel must be a noop.
+ 			await testService.cancelCurrentRequestForSession(resource, 'test');
+ 			assert.strictEqual(interruptCalls, 0, 'Interrupt should not fire after the turn has completed');

@@ -28,3 +28,5 @@ app-name.diff
 agents-web.diff
 autopilot-task-complete.diff
 core-ci-server-web.diff
+agent-host-stale-progress.diff
+agent-host-initial-chat-hydration.diff

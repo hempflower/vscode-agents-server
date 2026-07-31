@@ -1,0 +1,16 @@
+diff --git a/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts b/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts
+--- a/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts
++++ b/lib/vscode/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.ts
+@@ -4097,6 +4097,12 @@ private async _createAndSubscribe(sessionResource: URI, model: ModelSelection |
+ 		const chatURI = this._resolveChatUriFromState(sessionResource, rawState);
+ 		this._setChatURI(sessionResource, chatURI);
+ 		const chatSub = this._ensureChatSubscription(session.toString(), chatURI);
++		// The first turn can immediately emit synthetic progress (for example,
++		// the worktree-creation announcement). Do not dispatch it until the
++		// default-chat snapshot is installed; otherwise a late snapshot can
++		// replace the live chat state and lose those first response parts until
++		// the session is reopened and hydrated from history.
++		await this._whenSubscriptionHydrated(chatSub, CancellationToken.None);
+ 		if (!fork) {
+ 			this._activeSessions.get(sessionResource)?.setStateSubscriptions(newSub, chatSub);
+ 		}
