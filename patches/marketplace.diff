@@ -19,8 +19,8 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/product/common/product.ts
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/platform/product/common/product.ts
 +++ vscode-agents-server/lib/vscode/src/vs/platform/product/common/product.ts
-@@ -49,6 +49,17 @@ else if (globalThis._VSCODE_PRODUCT_JSON
- 			version: pkg.version
+@@ -104,6 +104,17 @@ else {
+ 			}
  		});
  	}
 +
@@ -36,7 +36,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/platform/product/common/product.ts
 +	});
  }
  
- // Web environment or unknown
+ export default product;
 Index: vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/server/node/webClientServer.ts
