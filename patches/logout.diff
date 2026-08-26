@@ -4,11 +4,11 @@ This will only show if you have authentication enabled.
 
 This has e2e tests but are currently disabled and need to be fixed.
 
-Index: code-server/lib/vscode/src/vs/base/common/product.ts
+Index: vscode-agents-server/lib/vscode/src/vs/base/common/product.ts
 ===================================================================
---- code-server.orig/lib/vscode/src/vs/base/common/product.ts
-+++ code-server/lib/vscode/src/vs/base/common/product.ts
-@@ -87,6 +87,7 @@ export interface IProductConfiguration {
+--- vscode-agents-server.orig/lib/vscode/src/vs/base/common/product.ts
++++ vscode-agents-server/lib/vscode/src/vs/base/common/product.ts
+@@ -100,6 +100,7 @@ export interface IProductConfiguration {
  	readonly codeServerVersion?: string
  	readonly rootEndpoint?: string
  	readonly updateEndpoint?: string
@@ -16,10 +16,10 @@ Index: code-server/lib/vscode/src/vs/base/common/product.ts
  
  	readonly version: string;
  	readonly date?: string;
-Index: code-server/lib/vscode/src/vs/server/node/serverEnvironmentService.ts
+Index: vscode-agents-server/lib/vscode/src/vs/server/node/serverEnvironmentService.ts
 ===================================================================
---- code-server.orig/lib/vscode/src/vs/server/node/serverEnvironmentService.ts
-+++ code-server/lib/vscode/src/vs/server/node/serverEnvironmentService.ts
+--- vscode-agents-server.orig/lib/vscode/src/vs/server/node/serverEnvironmentService.ts
++++ vscode-agents-server/lib/vscode/src/vs/server/node/serverEnvironmentService.ts
 @@ -18,6 +18,7 @@ import { ProtocolConstants } from '../..
  export const serverOptions: OptionDescriptions<Required<ServerParsedArgs>> = {
  	/* ----- code-server ----- */
@@ -36,22 +36,22 @@ Index: code-server/lib/vscode/src/vs/server/node/serverEnvironmentService.ts
  
  	/* ----- server setup ----- */
  
-Index: code-server/lib/vscode/src/vs/server/node/webClientServer.ts
+Index: vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
 ===================================================================
---- code-server.orig/lib/vscode/src/vs/server/node/webClientServer.ts
-+++ code-server/lib/vscode/src/vs/server/node/webClientServer.ts
-@@ -361,6 +361,7 @@ export class WebClientServer {
+--- vscode-agents-server.orig/lib/vscode/src/vs/server/node/webClientServer.ts
++++ vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
+@@ -357,6 +357,7 @@ export class WebClientServer {
  			codeServerVersion: this._productService.codeServerVersion,
  			rootEndpoint: rootBase,
  			updateEndpoint: !this._environmentService.args['disable-update-check'] ? rootBase + '/update/check' : undefined,
 +			logoutEndpoint: this._environmentService.args['auth'] && this._environmentService.args['auth'] !== "none" ? rootBase + '/logout' : undefined,
  			embedderIdentifier: 'server-distro',
+ 			voiceWsUrl: this._productService.voiceWsUrl,
  			extensionsGallery: this._productService.extensionsGallery,
- 		};
-Index: code-server/lib/vscode/src/vs/workbench/browser/client.ts
+Index: vscode-agents-server/lib/vscode/src/vs/workbench/browser/client.ts
 ===================================================================
---- code-server.orig/lib/vscode/src/vs/workbench/browser/client.ts
-+++ code-server/lib/vscode/src/vs/workbench/browser/client.ts
+--- vscode-agents-server.orig/lib/vscode/src/vs/workbench/browser/client.ts
++++ vscode-agents-server/lib/vscode/src/vs/workbench/browser/client.ts
 @@ -1,11 +1,15 @@
  import { Disposable } from "../../base/common/lifecycle.js";
  import { localize } from '../../nls.js';
