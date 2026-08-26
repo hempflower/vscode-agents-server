@@ -172,7 +172,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/browser/web.main.ts
  import { IProgressService } from '../../platform/progress/common/progress.js';
  import { DelayedLogChannel } from '../services/output/common/delayedLogChannel.js';
  import { dirname, joinPath } from '../../base/common/resources.js';
-@@ -139,6 +140,9 @@ export class BrowserMain extends Disposa
+@@ -140,6 +141,9 @@ export class BrowserMain extends Disposa
  		// Startup
  		const instantiationService = workbench.startup();
  
@@ -251,7 +251,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/server/node/webClientServer.ts
 +++ vscode-agents-server/lib/vscode/src/vs/server/node/webClientServer.ts
-@@ -353,6 +353,7 @@ export class WebClientServer {
+@@ -349,6 +349,7 @@ export class WebClientServer {
  		} : undefined;
  
  		const productConfiguration: Partial<Mutable<IProductConfiguration>> = {
@@ -326,7 +326,7 @@ Index: vscode-agents-server/lib/vscode/src/vs/workbench/browser/parts/dialogs/di
 ===================================================================
 --- vscode-agents-server.orig/lib/vscode/src/vs/workbench/browser/parts/dialogs/dialog.ts
 +++ vscode-agents-server/lib/vscode/src/vs/workbench/browser/parts/dialogs/dialog.ts
-@@ -47,8 +47,11 @@ export function createWorkbenchDialogOpt
+@@ -54,8 +54,11 @@ export function createWorkbenchDialogOpt
  
  export function createBrowserAboutDialogDetails(productService: IProductService): { title: string; details: string; detailsToCopy: string } {
  	const detailString = (useAgo: boolean): string => {
