@@ -3,7 +3,6 @@ base-path.diff
 proposed-api.diff
 marketplace.diff
 webview.diff
-csp-hashes.diff
 disable-builtin-ext-update.diff
 insecure-notification.diff
 update-check.diff
